@@ -105,6 +105,7 @@ def main():
 
     track = resolve_track(args.track, serial=args.serial)
     env, platform = track["env"], track["platform"]
+    platform = track.get("checker_platform", platform)
     skill_text = subprocess.run(["phone-harness", "skill"], capture_output=True,
                                 text=True).stdout
 

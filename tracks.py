@@ -31,7 +31,8 @@ TRACKS = {
         # Requires a booted simulator: xcrun simctl boot "<device>" &&
         # open -a Simulator. PHONE_HARNESS_SIM_DEVICE picks the window when
         # several are booted (one worker per device).
-        "platform": "ios",              # checkers use the iOS branches
+        "platform": "ios",
+        "checker_platform": "sim",      # privileged sqlite/simctl checkers
         "env": {"PHONE_HARNESS_PLATFORM": "sim"},
         "parallel": 3,
         "description": "iOS Simulator, Mirroring-identical control — hermetic iOS track",
