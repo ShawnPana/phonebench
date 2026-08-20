@@ -7,12 +7,25 @@ vocabulary; underneath, each track rides one of these surfaces.
 
 ## The surfaces
 
-| Surface | Connection point | Eyes | Hands | On-device agent? | Setup friction | phonebench track |
+| Surface | What it is | Eyes | Hands | Agent on device? | Setup | Track |
 |---|---|---|---|---|---|---|
-| **adb** (Android) | `adbd`, a debug daemon **built into every Android** (USB or Wi-Fi; authorized once by RSA key prompt) | pixels via `screencap`; accessibility tree via `uiautomator dump`; **true state** via `dumpsys` / `content query` / sqlite | `input tap/swipe/text` (per-call process spawn); `am`/`pm` for app lifecycle | none — the daemon ships in the OS | Developer options toggle | `android-emu`, `real-android` |
-| **XCUITest / WDA** (a.k.a. "Appium" on iOS) | `usbmuxd`/`lockdownd` (iOS 17+: CoreDevice/RemoteXPC) → `testmanagerd` runs a **test bundle that never exits** and serves HTTP (WebDriverAgent) | accessibility tree (`/source` XML) — exact, but only what apps declare; whole-page not viewport in web views | element actions + W3C gestures over HTTP | yes — WDA must be installed, signed (real devices), and kept alive | Xcode toolchain; real devices need an Apple developer cert | `appium` (cloud iPhones via phone-cloud) |
-| **iPhone Mirroring** (phone-harness native) | a **consumer Continuity feature**: the phone streams video to a Mac window; the Mac forwards input. The phone doesn't know it's automated | window capture + **Vision OCR** — sees exactly what a human sees, with human-class misreads | HID-level CGEvents / SkyLight records into the window | none | none beyond normal Mirroring pairing | `real-ios` |
-| **Simulator window** (phone-harness `sim`) | none — the "phone" is a local macOS process whose window is captured like Mirroring's | same OCR eyes as Mirroring (identical control modality, by design); checkers may side-door the sim's **filesystem/sqlite** | same CGEvents; nav accelerators differ (Home = ⌘⇧H) | none | Xcode + an iOS runtime download | `sim` |
+| **adb** | debug daemon built into Android | pixels, tree, **real state** | shell input | no | one toggle | `android-emu`, `real-android` |
+| **XCUITest / WDA** | Apple's test channel, held open as a server | tree | element taps | **yes** | Xcode + signing | `appium` (cloud) |
+| **iPhone Mirroring** | the phone screen-shared to a Mac window | OCR on pixels | mouse + keys | no | none | `real-ios` |
+| **Simulator window** | a fake phone as a local Mac window | OCR on pixels | mouse + keys | no | Xcode | `sim` |
+
+Reading it in one line each:
+
+- **adb** — Android ships its own debug door; you get a privileged shell, so
+  eyes include *actual app state* (`dumpsys`, sqlite), not just the screen.
+- **XCUITest/WDA** — iOS has no shell, only a test framework; automation is a
+  fake test (WebDriverAgent) that never exits and serves HTTP. Only path that
+  needs an app installed on the phone.
+- **iPhone Mirroring** — no debug channel at all: the *human* channel. The Mac
+  sees the streamed screen and sends normal input; the phone can't tell an
+  agent from a person.
+- **Simulator window** — same eyes and hands as Mirroring, pointed at a local
+  simulator instead of a real phone. That's deliberate: scores transfer.
 
 Reference point outside phones: **CDP** (browsers) is a *semantic* protocol —
 the browser instruments itself and streams DOM/network truth. adb is only a
