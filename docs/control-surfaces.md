@@ -43,11 +43,21 @@ phone-harness goes around the pipe entirely via the human channel.
 
 | | Transport | Eyes fidelity | Hands fidelity |
 |---|---|---|---|
-| adb / USB | excellent (kernel-level, agentless) | tree exact but slow (2–3 s) and occasionally "not idle"; state reads are ground truth | deterministic, slowish |
+| adb / USB | excellent (kernel-level, agentless) | tree is exact but slow to build and can refuse while the UI settles; state reads are ground truth | deterministic, slowish |
 | adb / Wi-Fi | drops on network events; needs keep-awake | same | same |
-| Simulator window | no transport to fail | OCR misreads/truncations ("3arol Phoneben") | taps solid; **gesture physics weak** (rubber-banding, form sheets that barely scroll) |
-| WDA / cloud | userspace agent can detach; ~0.8 s/op RTT | tree exact; viewport-blind quirks | element actions reliable, latency-taxed |
-| iPhone Mirroring | **most fragile**: session pauses when the phone is unlocked or the Mac sleeps (measured mid-benchmark) | OCR, as above | taps solid; gestures weak, focus-sensitive |
+| Simulator window | no transport to fail | OCR (see below) | taps solid; **gesture physics weak** (momentum flicks vs. rubber-banding; some form sheets barely scroll) |
+| WDA / cloud | userspace helper can detach; every action pays an HTTP round-trip | tree exact; web views expose the whole page, not the viewport | element actions reliable, latency-taxed |
+| iPhone Mirroring | **most fragile**: the session pauses whenever the phone is unlocked or the Mac sleeps | OCR (see below) | taps solid; gestures weak, focus-sensitive |
+
+**On OCR eyes** (both pixel surfaces): phone-harness reads the screen with
+Apple's Vision recognizer. OCR is inherently lossy — characters get misread,
+adjacent strings merge, long labels truncate — so checkers should match
+fingerprints fuzzily and never treat a single read as proof. Language
+coverage is also limited: as currently configured (no
+`recognitionLanguages` set), Vision recognizes Latin-script text only —
+**Chinese and other non-Latin scripts are not supported**. Tree-based
+surfaces have neither problem; their weakness is the inverse (they only see
+what apps declare).
 
 **UX reliability** (what it feels like to hand an agent your phone) inverts
 that ranking. Mirroring is the worst transport and the **best experience**:
