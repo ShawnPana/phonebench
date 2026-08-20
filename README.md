@@ -12,11 +12,16 @@ phonebench is one framework, one task suite, and several **tracks** — the same
 tasks scored against different device classes. Results are always labeled by
 track and never blended.
 
-| Track | Devices | What it measures |
+| Track | Devices | Role |
 |---|---|---|
-| **phonebench-real** | a real iPhone via iPhone Mirroring + a real Android over adb | The benchmark. Real tasks on real phones — including the first interactive iOS agent eval. |
-| **phonebench-emulate** | Android emulators (AVDs) | Cheap, parallel iteration; the emulator-vs-real delta is itself a result. |
-| **phonebench-appium** | cloud iPhones through the XCUITest tree (e.g. phone-cloud / AWS Device Farm) | The same tasks through a tree-based backend; parallel iOS. |
+| **sim** | iOS Simulators, driven with the *same* pixels-and-HID control as a real iPhone | The hermetic iOS lane: parallel, CI-able, $0. Where the leaderboard's volume runs. |
+| **emulate** | Android emulators (AVDs) over adb | The hermetic Android lane — same role, other OS. |
+| **real-ios** / **real-android** | a real iPhone via iPhone Mirroring / a real Android over adb | Small-N realism reference: the sim-to-real delta is itself a result. |
+| **appium** | cloud iPhones through the XCUITest tree (phone-cloud / AWS Device Farm) | Same tasks through a tree-based backend; parallel real-hardware iOS. Note: cloud devices restrict most stock apps. |
+
+The thing being ranked is the **agent product × model** (Claude Code, Codex,
+opencode, …) — every row drives every track through the same phone-harness
+vocabulary, pinned by SHA (`harness.yaml` → `harness.lock`).
 
 ## Control surfaces
 
