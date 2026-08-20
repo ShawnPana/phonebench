@@ -20,6 +20,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 from tracks import resolve as resolve_track
 from checkers.registry import resolve as resolve_checker
+from agents.adapters import ADAPTERS
 
 AGENT_BUFFER_S = 90          # process grace beyond the task's own timeout
 FAILURE_SIGNS = [            # transcript signatures -> tool-vs-model tags
@@ -90,7 +91,8 @@ def main():
     ap.add_argument("--track", required=True)
     ap.add_argument("--tasks", required=True, help="comma-separated task ids")
     ap.add_argument("--serial")
-    ap.add_argument("--model", default="claude-sonnet-5")
+    ap.add_argument("--model", default=None, help="agent-native model id; default = the agent's own default")
+    ap.add_argument("--agent", default="claude", choices=list(ADAPTERS))
     args = ap.parse_args()
 
     track = resolve_track(args.track, serial=args.serial)
@@ -114,8 +116,8 @@ def main():
 
     for task_id in args.tasks.split(","):
         spec = yaml.safe_load((HERE / "tasks" / f"{task_id}.yaml").read_text())
-        row = {"task": task_id, "track": args.track, "model": args.model,
-               "started": time.strftime("%F %T")}
+        row = {"task": task_id, "track": args.track, "agent": args.agent,
+               "model": args.model, "started": time.strftime("%F %T")}
         print(f"\n=== {task_id} [{args.track}] ===")
 
         # setup
@@ -133,11 +135,11 @@ def main():
             continue
 
         # sealed agent
-        print(f"  agent running ({args.model}, max {spec['max_turns']} turns, "
-              f"{spec['timeout_s']}s) ...")
-        agent = run_agent(spec["prompt"].strip(), skill_text, env, args.model,
-                          spec["max_turns"], spec["timeout_s"], str(agent_cwd))
-        (run_dir / f"{task_id}-agent.json").write_text(json.dumps(agent, indent=2))
+        print(f"  {args.agent} running ({args.model or 'default model'}, "
+              f"{spec['timeout_s']}s cap) ...", flush=True)
+        agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, env,
+                                     args.model, spec["timeout_s"], str(agent_cwd))
+        (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
         # check — never trusts the agent
         if spec["check"] == "answer.contains":
@@ -149,7 +151,7 @@ def main():
             (run_dir / f"{task_id}-check.log").write_text(raw)
             passed, check_detail = bool(c.get("ok")), c
 
-        final_screenshot(env, run_dir / f"{task_id}-final.png")
+        final_screenshot(env, run_dir / f"{task_id}-{args.agent}-final.png")
 
         # cleanup — always
         cl, raw = ph(resolve_checker(spec["cleanup"], platform, spec.get("cleanup_args")), env)
@@ -158,8 +160,8 @@ def main():
         row.update(status="pass" if passed else "fail",
                    check=check_detail, cleanup_ok=bool(cl.get("ok")),
                    agent_wall_s=agent.get("agent_wall_s"),
-                   turns=agent.get("num_turns"),
-                   cost_usd=agent.get("total_cost_usd"),
+                   turns=agent.get("turns"),
+                   cost_usd=agent.get("cost_usd"),
                    usage=agent.get("usage", {}),
                    failure_class=None if passed else classify(agent))
         print(f"  {'PASS' if passed else 'FAIL'}  wall={row['agent_wall_s']}s "

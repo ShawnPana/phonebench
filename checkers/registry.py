@@ -100,7 +100,10 @@ try:
     type_text("__NAME__", keystrokes=True); time.sleep(1.5)
 except Exception as e:
     emit(ok=False, error="search focus failed: %s" % e); raise SystemExit
-found = visible("__NAME__")
+# The search FIELD itself echoes the query, so one match is not a hit:
+# a real contact means a result row too (>=2 matches) and no "No Results".
+_rows = [r for r in ocr() if "__NAME__".lower() in r["text"].lower()]
+found = (not visible("No Results")) and len(_rows) >= 2
 '''
 
 REGISTRY["contacts.assert_absent"] = {"ios": _IOS_FIND_CAROL + '''
