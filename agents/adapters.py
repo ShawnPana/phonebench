@@ -37,6 +37,7 @@ def run_claude(prompt, skill_text, env, model, timeout_s, cwd):
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL,
                            timeout=timeout_s + AGENT_BUFFER_S,
                            cwd=cwd, env={**os.environ, **env})
         try:
@@ -48,7 +49,8 @@ def run_claude(prompt, skill_text, env, model, timeout_s, cwd):
                "cost_usd": data.get("total_cost_usd"),
                "usage": data.get("usage", {}),
                "model": model or "claude-default",
-               "raw": data}
+               "raw": data, "rc": p.returncode,
+               "stderr_tail": p.stderr.strip()[-500:]}
     except subprocess.TimeoutExpired:
         row = {"result": None, "timeout": True, "turns": None,
                "cost_usd": None, "usage": {}, "model": model, "raw": {}}
@@ -74,6 +76,7 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
     result = None
     try:
         p = subprocess.run(cmd, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL,
                            timeout=timeout_s + AGENT_BUFFER_S,
                            cwd=cwd, env={**os.environ, **env})
         for line in p.stdout.splitlines():
@@ -95,7 +98,8 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
         if os.path.exists(last):
             result = open(last).read().strip()
         row = {"result": result, "turns": turns, "cost_usd": None,
-               "usage": usage, "model": mdl, "raw": {"events": events[-40:]}}
+               "usage": usage, "model": mdl, "raw": {"events": events[-40:]},
+               "rc": p.returncode, "stderr_tail": p.stderr.strip()[-500:]}
     except subprocess.TimeoutExpired:
         row = {"result": None, "timeout": True, "turns": turns,
                "cost_usd": None, "usage": usage, "model": mdl, "raw": {}}
