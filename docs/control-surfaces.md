@@ -12,7 +12,7 @@ vocabulary; underneath, each track rides one of these surfaces.
 | **What it is** | debug daemon built into Android | Apple's test channel, held open as a server | the phone screen-shared to a Mac window | a fake phone as a local Mac window |
 | **Eyes** | pixels · tree · **real state** | tree | OCR on pixels | OCR on pixels |
 | **Hands** | shell input | element taps | mouse + keys | mouse + keys |
-| **Installs anything on the phone?** | no | **yes — WebDriverAgent, a signed helper app** | no | no |
+| **On-phone install** | none | **WDA helper app** | none | none |
 | **Setup** | one toggle | Xcode + signing | none | Xcode |
 | **Track** | `android-emu`, `real-android` | `appium` | `real-ios` | `sim` |
 
