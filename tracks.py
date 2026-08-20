@@ -25,6 +25,17 @@ TRACKS = {
         "parallel": 4,
         "description": "Android emulators (AVDs) — phonebench-emulate",
     },
+    "sim": {
+        # iOS Simulator driven with the SAME eyes/hands as a real iPhone
+        # (window capture + OCR + HID events) — see phone-harness sim.py.
+        # Requires a booted simulator: xcrun simctl boot "<device>" &&
+        # open -a Simulator. PHONE_HARNESS_SIM_DEVICE picks the window when
+        # several are booted (one worker per device).
+        "platform": "ios",              # checkers use the iOS branches
+        "env": {"PHONE_HARNESS_PLATFORM": "sim"},
+        "parallel": 3,
+        "description": "iOS Simulator, Mirroring-identical control — hermetic iOS track",
+    },
     "appium": {
         # Cloud iPhones through the XCUITest tree — rented from phone-cloud
         # (api.phone-harness.com), the same surface any customer uses.

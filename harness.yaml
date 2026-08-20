@@ -1,0 +1,6 @@
+# The control layer. phonebench never vendors or forks phone control —
+# it names a phone-harness ref and fetches it. Change ref to move the whole
+# benchmark to a different harness version; harness.lock records the exact
+# SHA every run used.
+repo: https://github.com/ShawnPana/phone-harness
+ref: sim-window

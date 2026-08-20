@@ -95,6 +95,14 @@ def main():
     ap.add_argument("--agent", default="claude", choices=list(ADAPTERS))
     args = ap.parse_args()
 
+    harness_dir = HERE / ".harness"
+    harness_sha = None
+    if harness_dir.exists():
+        os.environ["PATH"] = f"{harness_dir}:{os.environ['PATH']}"
+        lock = HERE / "harness.lock"
+        if lock.exists():
+            harness_sha = json.loads(lock.read_text()).get("sha")
+
     track = resolve_track(args.track, serial=args.serial)
     env, platform = track["env"], track["platform"]
     skill_text = subprocess.run(["phone-harness", "skill"], capture_output=True,
@@ -117,7 +125,8 @@ def main():
     for task_id in args.tasks.split(","):
         spec = yaml.safe_load((HERE / "tasks" / f"{task_id}.yaml").read_text())
         row = {"task": task_id, "track": args.track, "agent": args.agent,
-               "model": args.model, "started": time.strftime("%F %T")}
+               "model": args.model, "harness_sha": harness_sha,
+               "started": time.strftime("%F %T")}
         print(f"\n=== {task_id} [{args.track}] ===")
 
         # setup
