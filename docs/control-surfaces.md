@@ -12,7 +12,7 @@ vocabulary; underneath, each track rides one of these surfaces.
 | **What it is** | debug daemon built into Android | Apple's test channel, held open as a server | the phone screen-shared to a Mac window | a fake phone as a local Mac window |
 | **Eyes** | pixels · tree · **real state** | tree | OCR on pixels | OCR on pixels |
 | **Hands** | shell input | element taps | mouse + keys | mouse + keys |
-| **Agent on device?** | no | **yes** | no | no |
+| **Installs anything on the phone?** | no | **yes — WebDriverAgent, a signed helper app** | no | no |
 | **Setup** | one toggle | Xcode + signing | none | Xcode |
 | **Track** | `android-emu`, `real-android` | `appium` | `real-ios` | `sim` |
 
@@ -20,9 +20,10 @@ Reading it in one line each:
 
 - **adb** — Android ships its own debug door; you get a privileged shell, so
   eyes include *actual app state* (`dumpsys`, sqlite), not just the screen.
-- **XCUITest/WDA** — iOS has no shell, only a test framework; automation is a
-  fake test (WebDriverAgent) that never exits and serves HTTP. Only path that
-  needs an app installed on the phone.
+- **XCUITest/WDA** — iOS has no shell, only a test framework; automation means
+  installing a helper app (WebDriverAgent) that runs as a fake test which
+  never exits and serves HTTP. Only path that puts software on the phone —
+  and that helper must be signed, launched, and babysat.
 - **iPhone Mirroring** — no debug channel at all: the *human* channel. The Mac
   sees the streamed screen and sends normal input; the phone can't tell an
   agent from a person.
