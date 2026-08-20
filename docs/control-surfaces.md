@@ -7,12 +7,14 @@ vocabulary; underneath, each track rides one of these surfaces.
 
 ## The surfaces
 
-| Surface | What it is | Eyes | Hands | Agent on device? | Setup | Track |
-|---|---|---|---|---|---|---|
-| **adb** | debug daemon built into Android | pixels, tree, **real state** | shell input | no | one toggle | `android-emu`, `real-android` |
-| **XCUITest / WDA** | Apple's test channel, held open as a server | tree | element taps | **yes** | Xcode + signing | `appium` (cloud) |
-| **iPhone Mirroring** | the phone screen-shared to a Mac window | OCR on pixels | mouse + keys | no | none | `real-ios` |
-| **Simulator window** | a fake phone as a local Mac window | OCR on pixels | mouse + keys | no | Xcode | `sim` |
+| | **adb** | **XCUITest / WDA** | **iPhone Mirroring** | **Simulator window** |
+|---|---|---|---|---|
+| **What it is** | debug daemon built into Android | Apple's test channel, held open as a server | the phone screen-shared to a Mac window | a fake phone as a local Mac window |
+| **Eyes** | pixels · tree · **real state** | tree | OCR on pixels | OCR on pixels |
+| **Hands** | shell input | element taps | mouse + keys | mouse + keys |
+| **Agent on device?** | no | **yes** | no | no |
+| **Setup** | one toggle | Xcode + signing | none | Xcode |
+| **Track** | `android-emu`, `real-android` | `appium` | `real-ios` | `sim` |
 
 Reading it in one line each:
 
