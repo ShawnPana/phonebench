@@ -66,6 +66,9 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
            _sealed_prompt(skill_text, prompt)]
     if model:
         cmd += ["-m", model]
+    extra = os.environ.get("PHONEBENCH_CODEX_ARGS")
+    if extra:                       # e.g. -c model_reasoning_effort="medium"
+        cmd[2:2] = extra.split("\x1f") if "\x1f" in extra else extra.split()
     t0 = time.time()
     usage, turns, mdl, events = {}, 0, model or "codex-default", []
     result = None
