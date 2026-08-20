@@ -18,6 +18,12 @@ track and never blended.
 | **phonebench-emulate** | Android emulators (AVDs) | Cheap, parallel iteration; the emulator-vs-real delta is itself a result. |
 | **phonebench-appium** | cloud iPhones through the XCUITest tree (e.g. phone-cloud / AWS Device Farm) | The same tasks through a tree-based backend; parallel iOS. |
 
+## Control surfaces
+
+How anything talks to a phone — adb, XCUITest/WDA, iPhone Mirroring, the
+Simulator window — and why agents only ever see one standardized layer:
+[docs/control-surfaces.md](docs/control-surfaces.md).
+
 ## Two layers, measured separately
 
 - **L0 — primitives** (`primitives/`): deterministic, no-LLM probes of the
