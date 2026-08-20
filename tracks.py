@@ -25,8 +25,18 @@ TRACKS = {
         "parallel": 4,
         "description": "Android emulators (AVDs) — phonebench-emulate",
     },
-    # "appium": cloud iPhones through the XCUITest tree (phone-cloud /
-    # Device Farm). Slots in here when that backend is worth waking up.
+    "appium": {
+        # Cloud iPhones through the XCUITest tree — rented from phone-cloud
+        # (api.phone-harness.com), the same surface any customer uses.
+        # Caller must export: PATH with the cloud-capable phone-harness
+        # first, PHONE_CLOUD_URL, PHONE_CLOUD_TOKEN (a user API key), and
+        # PHONE_CLOUD_SESSION (from `phone-harness cloud up`). Sessions are
+        # metered per-minute and idle out after 5 min — release promptly.
+        "platform": "ios",              # checkers use the iOS branches
+        "env": {"PHONE_HARNESS_PLATFORM": "cloud"},
+        "parallel": 5,                  # the account's Device Farm ceiling
+        "description": "cloud iPhone via phone-cloud (Device Farm, XCUITest tree) — phonebench-appium",
+    },
 }
 
 
