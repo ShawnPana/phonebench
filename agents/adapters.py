@@ -35,31 +35,79 @@ def _sealed_prompt(skill_text, prompt, env=None):
             "or two sentences. Do not ask questions.")
 
 
+
+
+def _stream(cmd, env, cwd, timeout_s, on_line):
+    """Run a CLI, echoing progress live while collecting every stdout line."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True,
+                            stdin=subprocess.DEVNULL,
+                            cwd=cwd, env={**os.environ, **env})
+    lines, t0 = [], time.time()
+    stderr = ""
+    try:
+        for line in proc.stdout:
+            lines.append(line)
+            try:
+                on_line(line)
+            except Exception:
+                pass
+            if time.time() - t0 > timeout_s + AGENT_BUFFER_S:
+                proc.kill()
+                raise subprocess.TimeoutExpired(cmd, timeout_s)
+        proc.wait(timeout=30)
+    finally:
+        try:
+            stderr = proc.stderr.read() or ""
+        except Exception:
+            pass
+    return lines, proc.returncode, stderr
+
+
+def _echo_claude(line):
+    ev = json.loads(line)
+    if ev.get("type") == "assistant":
+        for blk in (ev.get("message") or {}).get("content", []):
+            if blk.get("type") == "tool_use":
+                arg = str(blk.get("input", {}).get("command",
+                          blk.get("input", {})))[:110].replace("\n", " ")
+                print(f"    -> {blk.get('name')}: {arg}", flush=True)
+
+
+def _echo_codex(line):
+    ev = json.loads(line)
+    it = ev.get("item", {})
+    if ev.get("type") == "item.started" and it.get("type") == "command_execution":
+        print(f"    -> shell: {str(it.get('command', ''))[:110]}", flush=True)
+
+
 def run_claude(prompt, skill_text, env, model, timeout_s, cwd):
     cmd = ["claude", "-p",
            "--dangerously-skip-permissions",
            "--max-turns", "60",              # high: wall-clock is the cap
-           "--output-format", "json"]
+           "--output-format", "stream-json", "--verbose"]
     if model:
         cmd += ["--model", model]
     cmd += ["--", _sealed_prompt(skill_text, prompt, env)]
     t0 = time.time()
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True,
-                           stdin=subprocess.DEVNULL,
-                           timeout=timeout_s + AGENT_BUFFER_S,
-                           cwd=cwd, env={**os.environ, **env})
-        try:
-            data = json.loads(p.stdout)
-        except json.JSONDecodeError:
-            data = {"result": p.stdout[-2000:], "parse_error": True}
+        lines, rc, stderr = _stream(cmd, env, cwd, timeout_s, _echo_claude)
+        data = {}
+        for line in reversed(lines):
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "result":
+                data = ev
+                break
         row = {"result": data.get("result"),
                "turns": data.get("num_turns"),
                "cost_usd": data.get("total_cost_usd"),
                "usage": data.get("usage", {}),
                "model": model or "claude-default",
-               "raw": data, "rc": p.returncode,
-               "stderr_tail": p.stderr.strip()[-500:]}
+               "raw": data, "rc": rc,
+               "stderr_tail": (stderr or "").strip()[-500:]}
     except subprocess.TimeoutExpired:
         row = {"result": None, "timeout": True, "turns": None,
                "cost_usd": None, "usage": {}, "model": model, "raw": {}}
@@ -86,11 +134,10 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
     usage, turns, mdl, events = {}, 0, model or "codex-default", []
     result = None
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True,
-                           stdin=subprocess.DEVNULL,
-                           timeout=timeout_s + AGENT_BUFFER_S,
-                           cwd=cwd, env={**os.environ, **env})
-        for line in p.stdout.splitlines():
+        lines, _rc, _stderr = _stream(cmd, env, cwd, timeout_s, _echo_codex)
+        class p:                       # keep the row-building code unchanged
+            returncode, stderr = _rc, _stderr
+        for line in lines:
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
@@ -129,11 +176,10 @@ def run_opencode(prompt, skill_text, env, model, timeout_s, cwd):
     t0 = time.time()
     turns, texts, events_tail = 0, [], []
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True,
-                           stdin=subprocess.DEVNULL,
-                           timeout=timeout_s + AGENT_BUFFER_S,
-                           cwd=cwd, env={**os.environ, **env})
-        for line in p.stdout.splitlines():
+        lines, _rc, _stderr = _stream(cmd, env, cwd, timeout_s, _echo_codex)
+        class p:                       # keep the row-building code unchanged
+            returncode, stderr = _rc, _stderr
+        for line in lines:
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
