@@ -158,16 +158,6 @@ def main():
 
     # app availability: ask the environment which apps exist (sim is exact;
     # other tracks run optimistically and fail honestly at task time)
-    available = None
-    if platform == "sim":
-        subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
-                       capture_output=True)
-        calibrate()
-        apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
-                              capture_output=True, text=True).stdout
-        available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
-        print(f"apps on device: {len(available)}")
-
     # ---- self-calibration: this machine's harness-op cost vs the reference.
     # A GitHub runner is ~4x slower per op than the M-series the timeouts were
     # written on; scale every budget by MEASURED speed, never a guess.
@@ -189,6 +179,16 @@ def main():
             op_s = (time.time() - t0) / n
             speed_mult = min(4.0, max(1.0, op_s / REFERENCE_OP_S))
             print(f"harness op: {op_s:.1f}s -> time budgets x{speed_mult:.1f}")
+
+    available = None
+    if platform == "sim":
+        subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
+                       capture_output=True)
+        calibrate()
+        apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
+                              capture_output=True, text=True).stdout
+        available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
+        print(f"apps on device: {len(available)}")
 
     template_udid = None
     if args.fresh == "clone" and platform == "sim":
