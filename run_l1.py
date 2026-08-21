@@ -162,10 +162,33 @@ def main():
     if platform == "sim":
         subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
                        capture_output=True)
+        calibrate()
         apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
                               capture_output=True, text=True).stdout
         available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
         print(f"apps on device: {len(available)}")
+
+    # ---- self-calibration: this machine's harness-op cost vs the reference.
+    # A GitHub runner is ~4x slower per op than the M-series the timeouts were
+    # written on; scale every budget by MEASURED speed, never a guess.
+    REFERENCE_OP_S = 2.0
+    speed_mult = 1.0
+
+    def calibrate():
+        nonlocal speed_mult
+        t0 = time.time()
+        n = 0
+        for _ in range(2):
+            try:
+                ph("import json\nprint('::PB::' + json.dumps({'ok': True, "
+                   "'n': len(ocr())}))", env, timeout=90)
+                n += 1
+            except Exception:
+                pass
+        if n:
+            op_s = (time.time() - t0) / n
+            speed_mult = min(4.0, max(1.0, op_s / REFERENCE_OP_S))
+            print(f"harness op: {op_s:.1f}s -> time budgets x{speed_mult:.1f}")
 
     template_udid = None
     if args.fresh == "clone" and platform == "sim":
@@ -203,9 +226,15 @@ def main():
             subprocess.run(["open", "-a", "Simulator"], capture_output=True)
             os.environ["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
             env["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
-            if not _wait_sim_ready(env, timeout_s=180):
-                raise SystemExit("clone never became ready — aborting shard "
-                                 "instead of failing every task confusingly")
+            if not _wait_sim_ready(env, timeout_s=240):
+                # one retry with a brand-new clone before giving up loudly
+                subprocess.run(["xcrun", "simctl", "shutdown", "pb-clone"], capture_output=True)
+                subprocess.run(["xcrun", "simctl", "delete", "pb-clone"], capture_output=True)
+                subprocess.run(["xcrun", "simctl", "clone", template_udid, "pb-clone"], capture_output=True)
+                subprocess.run(["xcrun", "simctl", "boot", "pb-clone"], capture_output=True)
+                if not _wait_sim_ready(env, timeout_s=240):
+                    raise SystemExit("clone never became ready twice — aborting "
+                                     "shard instead of failing every task confusingly")
             return
         if args.fresh == "erase":
             # "booted" is NOT a stable target: after shutdown nothing is
@@ -274,8 +303,11 @@ def main():
               f"{spec['timeout_s']}s cap) ...", flush=True)
         trace_dir = run_dir / f"{task_id}-{args.agent}-trace"
         agent_env = {**env, "PHONE_HARNESS_TRACE": str(trace_dir)}
+        budget_s = int(spec["timeout_s"] * speed_mult)
         agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, agent_env,
-                                     args.model, spec["timeout_s"], str(agent_cwd))
+                                     args.model, budget_s, str(agent_cwd))
+        agent["speed_mult"] = round(speed_mult, 2)
+        agent["budget_s"] = budget_s
         (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
         # integrity: an agent that manipulated the device outside

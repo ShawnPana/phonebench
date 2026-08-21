@@ -328,15 +328,21 @@ def _bm():
     return _data() + "/Library/Safari/Bookmarks.db"
 '''
 REGISTRY["safari.assert_no_bookmark"] = {"sim": _SAFARI + '''
-db = sqlite3.connect(_bm()); w = _stubbed(db)
-w.ex("DELETE FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",))
-db.commit(); db.close()
+try:
+    db = sqlite3.connect(_bm()); w = _stubbed(db)
+    w.ex("DELETE FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",))
+    db.commit(); db.close()
+except sqlite3.OperationalError:
+    pass          # fresh clone: Safari has never run, no table = nothing to clean
 emit(ok=True)
 '''}
 REGISTRY["safari.has_bookmark"] = {"sim": _SAFARI + '''
-db = sqlite3.connect(_bm())
-n = db.execute("SELECT count(*) FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",)).fetchone()[0]
-db.close()
+try:
+    db = sqlite3.connect(_bm())
+    n = db.execute("SELECT count(*) FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",)).fetchone()[0]
+    db.close()
+except sqlite3.OperationalError:
+    n = 0         # table never created = Safari never even ran = no bookmark
 emit(ok=(n > 0), matches=n)
 '''}
 REGISTRY["safari.remove_bookmark"] = {"sim": REGISTRY["safari.assert_no_bookmark"]["sim"]}
@@ -421,19 +427,17 @@ REGISTRY["compound.cleanup_carol_reminder"] = {"sim": REGISTRY["reminders.remove
 
 # files + generic screen check
 REGISTRY["files.assert_no_pb_saves"] = {"sim": _SIM_DB + '''
-import glob, os
-docs = _data() + "/Containers/Shared/AppGroup"
-before = len(glob.glob(docs + "/*/File Provider Storage/*"))
-open("/tmp/pb-files-baseline", "w").write(str(before))
+open("/tmp/pb-files-stamp", "w").write(str(time.time()))
 home(); wait_stable()
-emit(ok=True, baseline=before)
+emit(ok=True)
 '''}
 REGISTRY["files.has_new_save"] = {"sim": _SIM_DB + '''
-import glob
+import glob, os
+stamp = float(open("/tmp/pb-files-stamp").read())
 docs = _data() + "/Containers/Shared/AppGroup"
-now = len(glob.glob(docs + "/*/File Provider Storage/*"))
-base = int(open("/tmp/pb-files-baseline").read() or 0)
-emit(ok=now > base, before=base, after=now)
+fresh = [f for f in glob.glob(docs + "/*/File Provider Storage/*")
+         if os.path.getmtime(f) > stamp]
+emit(ok=len(fresh) > 0, new_files=len(fresh))
 '''}
 REGISTRY["files.cleanup_saves"] = {"sim": COMMON + 'home(); wait_stable(); emit(ok=True, note="deferred to sim erase")'}
 
@@ -472,13 +476,19 @@ def resolve(key, platform, args=None):
 # in the sim preflight.
 _PBTOOL = _SIM_COMMON + '''
 def pbtool(*args):
-    p = subprocess.run(["xcrun", "simctl", "launch", "--console", _udid(),
-                        "com.phonebench.tools", *args],
-                       capture_output=True, text=True)
-    for line in p.stdout.splitlines():
-        if line.startswith("{"):
-            return json.loads(line)
-    return {"ok": False, "error": (p.stdout + p.stderr)[-160:]}
+    last = {"ok": False, "error": "never ran"}
+    for attempt in range(4):
+        p = subprocess.run(["xcrun", "simctl", "launch", "--console", _udid(),
+                            "com.phonebench.tools", *args],
+                           capture_output=True, text=True)
+        last = {"ok": False, "error": (p.stdout + p.stderr)[-160:]}
+        for line in p.stdout.splitlines():
+            if line.startswith("{"):
+                last = json.loads(line)
+        if last.get("ok"):
+            return last
+        time.sleep(4)          # a just-booted clone refuses early launches
+    return last
 def _names():
     return ("__NAME__".split(" ", 1) + [""])[:2]
 '''
