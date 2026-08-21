@@ -166,7 +166,13 @@ def main():
         if args.fresh == "none" or platform != "sim":
             return
         if args.fresh == "erase":
-            dev = os.environ.get("PHONE_HARNESS_SIM_DEVICE", "booted")
+            # "booted" is NOT a stable target: after shutdown nothing is
+            # booted, so erase/boot silently no-op and the sim stays dead
+            # (this killed an entire CI sweep). Resolve the concrete UDID.
+            out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted"],
+                                 capture_output=True, text=True).stdout
+            m = re.search(r"\(([0-9A-Fa-f-]{36})\).*\(Booted\)", out)
+            dev = m.group(1) if m else os.environ.get("PHONE_HARNESS_SIM_DEVICE", "booted")
             subprocess.run(["xcrun", "simctl", "shutdown", dev], capture_output=True)
             subprocess.run(["xcrun", "simctl", "erase", dev], capture_output=True)
             subprocess.run(["xcrun", "simctl", "boot", dev], capture_output=True)
