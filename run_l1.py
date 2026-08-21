@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 from tracks import resolve as resolve_track
 from checkers.registry import resolve as resolve_checker
 from agents.adapters import ADAPTERS
+from taskload import load_task
 from judge import judge as judge_answer, compute_ground_truth
 
 AGENT_BUFFER_S = 90          # process grace beyond the task's own timeout
@@ -168,8 +169,9 @@ def main():
         pairs = dict(zip(_re.findall(r'CFBundleIdentifier = "?([^";]+)"?;', apps_txt),
                          _re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps_txt)))
         suite_apps = set()
-        for f in (HERE / "tasks").glob("*.yaml"):
-            suite_apps.update(yaml.safe_load(f.read_text()).get("requires_apps") or [])
+        from taskload import load_all
+        for _t in load_all():
+            suite_apps.update(_t.get("requires_apps") or [])
         for bid, name in pairs.items():
             if name in suite_apps:
                 subprocess.run(["xcrun", "simctl", "terminate", "booted", bid],
@@ -177,7 +179,7 @@ def main():
 
     for task_id in args.tasks.split(","):
         freshen()
-        spec = yaml.safe_load((HERE / "tasks" / f"{task_id}.yaml").read_text())
+        spec = load_task(task_id)
         row = {"task": task_id, "track": args.track, "agent": args.agent,
                "model": args.model, "harness_sha": harness_sha,
                "started": time.strftime("%F %T")}

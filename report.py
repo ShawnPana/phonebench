@@ -12,6 +12,8 @@ import argparse, collections, glob, json, sys
 from pathlib import Path
 
 import yaml
+import sys as _sys; _sys.path.insert(0, str(Path(__file__).parent))
+from taskload import load_all
 
 HERE = Path(__file__).parent
 
@@ -31,8 +33,7 @@ def main():
     ap.add_argument("--md")
     args = ap.parse_args()
 
-    strata = {yaml.safe_load(open(f))["id"]: yaml.safe_load(open(f))["stratum"]
-              for f in glob.glob(str(HERE / "tasks" / "*.yaml"))}
+    strata = {t["id"]: t["stratum"] for t in load_all()}
     rows = load()
 
     cells = collections.defaultdict(list)

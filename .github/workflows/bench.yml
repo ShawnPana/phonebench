@@ -110,8 +110,9 @@ jobs:
           ALL="${{ inputs.tasks }}"
           if [ -z "$ALL" ]; then
             ALL=$(python3 -c "
-          import yaml, glob
-          ids=[yaml.safe_load(open(f))['id'] for f in sorted(glob.glob('tasks/*.yaml'))]
+          import sys; sys.path.insert(0, '.')
+          from taskload import all_ids
+          ids = all_ids()
           print(','.join(i for n,i in enumerate(ids) if n % ${{ inputs.shards }} == ${{ matrix.shard }}))")
           fi
           MODEL="${{ inputs.model }}"

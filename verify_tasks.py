@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE))
 from tracks import resolve as resolve_track
 from checkers.registry import resolve as resolve_checker
 from judge import judge as judge_answer, compute_ground_truth
+from taskload import load_task, all_ids
 
 # Privileged "do the task" hooks — sim side doors. Each is a phone-harness
 # snippet (helpers preloaded) or a plain shell list run on the host.
@@ -151,11 +152,10 @@ def main():
     track = resolve_track(args.track)
     env, cplat = track["env"], track.get("checker_platform", track["platform"])
 
-    ids = (args.tasks.split(",") if args.tasks else
-           sorted(p.stem for p in (HERE / "tasks").glob("*.yaml")))
+    ids = args.tasks.split(",") if args.tasks else all_ids()
     results = []
     for tid in ids:
-        spec = yaml.safe_load((HERE / "tasks" / f"{tid}.yaml").read_text())
+        spec = load_task(tid)
         if args.track not in spec["platforms"] and cplat not in spec["platforms"]:
             results.append((tid, "off-track", ""))
             continue
