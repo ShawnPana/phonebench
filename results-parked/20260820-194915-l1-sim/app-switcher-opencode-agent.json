@@ -1,0 +1,11 @@
+{
+  "result": null,
+  "timeout": true,
+  "turns": 0,
+  "cost_usd": null,
+  "usage": {},
+  "model": null,
+  "raw": {},
+  "agent_wall_s": 390.0,
+  "agent": "opencode"
+}
