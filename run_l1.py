@@ -193,7 +193,10 @@ def main():
                 pass
         if n:
             op_s = (time.time() - t0) / n
-            speed_mult = min(4.0, max(1.0, op_s / REFERENCE_OP_S))
+            floor = 2.0 if os.environ.get("GITHUB_ACTIONS") else 1.0
+            # op cost is only part of CI slowness: agents also take more
+            # turns there, so CI keeps a 2x floor even with fast ops
+            speed_mult = min(4.0, max(floor, op_s / REFERENCE_OP_S))
             print(f"harness op: {op_s:.1f}s -> time budgets x{speed_mult:.1f}")
 
     available = None
