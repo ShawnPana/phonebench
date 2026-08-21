@@ -56,7 +56,21 @@ def _sql(db, *stmts):
 def satisfy(task_id):
     """Return True if we could programmatically satisfy the task."""
     d = _data()
+    def pbtool(*a):
+        return subprocess.run(["xcrun", "simctl", "launch", "--console",
+                               "booted", "com.phonebench.tools", *a],
+                              capture_output=True, text=True).stdout
     if task_id in ("contact-carol",):
+        pbtool("add", "Carol", "Phonebench", "555-0142")
+        return True
+    if task_id == "contact-edit":
+        pbtool("remove", "Carol", "Phonebench")
+        pbtool("add", "Carol", "Phonebench", "555-0199")
+        return True
+    if task_id == "contact-delete":
+        pbtool("remove", "Carol", "Phonebench")
+        return True
+    if False and task_id in ("contact-carol",):
         _sql(d + "/Library/AddressBook/AddressBook.sqlitedb",
              ("INSERT INTO ABPerson (First, Last) VALUES ('Carol','Phonebench')",),
              ("INSERT INTO ABMultiValue (record_id, property, label, value) "

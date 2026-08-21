@@ -280,10 +280,15 @@ for (rid,) in rows:
 w.ex("INSERT INTO ABPerson (First, Last) VALUES (?, ?)", (first, last))
 rid = w.ex("SELECT ROWID FROM ABPerson WHERE First=? AND Last=?", (first, last)).fetchone()[0]
 w.ex("INSERT INTO ABMultiValue (record_id, property, label, value) VALUES (?, 3, 1, ?)",
-     (rid, "(555) 014-2"[:0] + "555-0142"))
+     (rid, "555-0142"))
 db.commit(); db.close()
 subprocess.run(["xcrun", "simctl", "terminate", _udid(), "com.apple.MobileAddressBook"],
                capture_output=True)
+# contactsd caches the store: without a daemon restart the UI never shows the
+# seeded row (run-1 lesson: sqlite said 7 contacts, the screen said 6)
+subprocess.run(["xcrun", "simctl", "spawn", _udid(), "killall", "-9", "contactsd"],
+               capture_output=True)
+time.sleep(2)
 home(); wait_stable()
 emit(ok=True, seeded_rowid=rid)
 '''}
@@ -457,3 +462,46 @@ def resolve(key, platform, args=None):
     for k, v in (args or {}).items():
         code = code.replace(f"__{k.upper()}__", str(v))
     return code
+
+
+# ---- pbtools overrides: the sanctioned contacts channel ------------------
+# Raw sqlite writes are GHOSTS: the UI reads a different store and only
+# writes through to the sqlite mirror (mirror READS stay valid). All contact
+# mutations go through PBTools.app (CNContactStore, granted via simctl
+# privacy). tools/ensure_pbtools.sh builds/installs it; the runner calls it
+# in the sim preflight.
+_PBTOOL = _SIM_COMMON + '''
+def pbtool(*args):
+    p = subprocess.run(["xcrun", "simctl", "launch", "--console", _udid(),
+                        "com.phonebench.tools", *args],
+                       capture_output=True, text=True)
+    for line in p.stdout.splitlines():
+        if line.startswith("{"):
+            return json.loads(line)
+    return {"ok": False, "error": (p.stdout + p.stderr)[-160:]}
+def _names():
+    return ("__NAME__".split(" ", 1) + [""])[:2]
+'''
+
+REGISTRY["contacts.seed"]["sim"] = _PBTOOL + '''
+first, last = _names()
+pbtool("remove", first, last)
+r = pbtool("add", first, last, "555-0142")
+home(); wait_stable()
+emit(ok=bool(r.get("ok")), via="cncontactstore")
+'''
+
+REGISTRY["contacts.assert_absent"]["sim"] = _PBTOOL + '''
+first, last = _names()
+r = pbtool("remove", first, last)
+home(); wait_stable()
+emit(ok=True, deleted_leftover=bool(r.get("removed")))
+'''
+
+REGISTRY["contacts.is_absent"]["sim"] = _PBTOOL + '''
+first, last = _names()
+r = pbtool("count", first, last)
+emit(ok=(r.get("count") == 0), remaining=r.get("count"))
+'''
+
+REGISTRY["contacts.remove"]["sim"] = REGISTRY["contacts.assert_absent"]["sim"]

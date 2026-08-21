@@ -128,6 +128,8 @@ def main():
     # other tracks run optimistically and fail honestly at task time)
     available = None
     if platform == "sim":
+        subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
+                       capture_output=True)
         apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
                               capture_output=True, text=True).stdout
         available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))

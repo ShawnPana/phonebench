@@ -98,16 +98,16 @@ def compute_ground_truth(task_id, checker_platform):
         out = subprocess.run(["xcrun", "simctl", "list", "runtimes"],
                              capture_output=True, text=True).stdout
         m = re.search(r"iOS ([\d.]+)", out)
-        return f"The OS version is iOS {m.group(1)}." if m else None
+        return f"The version is 'iOS {m.group(1)}'." if m else None
     if task_id == "photos-count":
         db = sqlite3.connect(_sim_data() + "/Media/PhotoData/Photos.sqlite")
         n = db.execute("SELECT count(*) FROM ZASSET WHERE ZTRASHEDSTATE=0").fetchone()[0]
         db.close()
-        return f"There are exactly {n} photos."
+        return f"There are exactly '{n} photos'."
     if task_id == "list-scroll-count":
         db = sqlite3.connect(_sim_data() + "/Library/AddressBook/AddressBook.sqlitedb")
         n = db.execute("SELECT count(*) FROM ABPerson WHERE First IS NOT NULL"
                        " OR Last IS NOT NULL").fetchone()[0]
         db.close()
-        return f"There are exactly {n} contacts."
+        return f"There are exactly '{n} contacts'."
     return None
