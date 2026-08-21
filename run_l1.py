@@ -114,9 +114,11 @@ def main():
     ap.add_argument("--serial")
     ap.add_argument("--model", default=None, help="agent-native model id; default = the agent's own default")
     ap.add_argument("--agent", default="claude", choices=list(ADAPTERS))
-    ap.add_argument("--fresh", default="none", choices=["none", "apps", "erase"],
-                    help="between tasks: none | terminate suite apps | full "
-                         "simctl erase+reboot (CI-grade, ~90s/task)")
+    ap.add_argument("--fresh", default="none",
+                    choices=["none", "apps", "clone", "erase"],
+                    help="between tasks: none | terminate suite apps | boot a "
+                         "fresh CLONE of a first-booted template (~30-60s, "
+                         "recommended for CI) | full erase+reboot (slowest)")
     args = ap.parse_args()
 
     harness_dir = HERE / ".harness"
@@ -162,8 +164,45 @@ def main():
         available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
         print(f"apps on device: {len(available)}")
 
+    template_udid = None
+    if args.fresh == "clone" and platform == "sim":
+        # Bake the template ONCE: the currently booted device, with PBTools
+        # installed and granted, first boot already paid. Every task then
+        # boots a byte-identical clone WARM instead of re-first-booting.
+        out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted"],
+                             capture_output=True, text=True).stdout
+        m = re.search(r"\(([0-9A-Fa-f-]{36})\).*\(Booted\)", out)
+        if not m:
+            print("--fresh clone needs a booted template device")
+            return 1
+        template_udid = m.group(1)
+        subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
+                       capture_output=True)
+        subprocess.run(["xcrun", "simctl", "shutdown", template_udid],
+                       capture_output=True)
+
     def freshen():
         if args.fresh == "none" or platform != "sim":
+            return
+        if args.fresh == "clone":
+            # retire the previous clone, mint and boot a new one
+            out = subprocess.run(["xcrun", "simctl", "list", "devices"],
+                                 capture_output=True, text=True).stdout
+            for mm in re.finditer(r"pb-clone \(([0-9A-Fa-f-]{36})\)", out):
+                subprocess.run(["xcrun", "simctl", "shutdown", mm.group(1)],
+                               capture_output=True)
+                subprocess.run(["xcrun", "simctl", "delete", mm.group(1)],
+                               capture_output=True)
+            subprocess.run(["xcrun", "simctl", "clone", template_udid, "pb-clone"],
+                           capture_output=True)
+            subprocess.run(["xcrun", "simctl", "boot", "pb-clone"],
+                           capture_output=True)
+            subprocess.run(["open", "-a", "Simulator"], capture_output=True)
+            os.environ["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
+            env["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
+            if not _wait_sim_ready(env, timeout_s=180):
+                raise SystemExit("clone never became ready — aborting shard "
+                                 "instead of failing every task confusingly")
             return
         if args.fresh == "erase":
             # "booted" is NOT a stable target: after shutdown nothing is
