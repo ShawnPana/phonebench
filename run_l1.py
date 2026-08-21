@@ -99,6 +99,9 @@ def main():
     ap.add_argument("--serial")
     ap.add_argument("--model", default=None, help="agent-native model id; default = the agent's own default")
     ap.add_argument("--agent", default="claude", choices=list(ADAPTERS))
+    ap.add_argument("--fresh", default="none", choices=["none", "apps", "erase"],
+                    help="between tasks: none | terminate suite apps | full "
+                         "simctl erase+reboot (CI-grade, ~90s/task)")
     args = ap.parse_args()
 
     harness_dir = HERE / ".harness"
@@ -144,7 +147,36 @@ def main():
         available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
         print(f"apps on device: {len(available)}")
 
+    def freshen():
+        if args.fresh == "none" or platform != "sim":
+            return
+        if args.fresh == "erase":
+            dev = os.environ.get("PHONE_HARNESS_SIM_DEVICE", "booted")
+            subprocess.run(["xcrun", "simctl", "shutdown", dev], capture_output=True)
+            subprocess.run(["xcrun", "simctl", "erase", dev], capture_output=True)
+            subprocess.run(["xcrun", "simctl", "boot", dev], capture_output=True)
+            subprocess.run(["open", "-a", "Simulator"], capture_output=True)
+            time.sleep(75)                       # first boot after erase
+            subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
+                           capture_output=True)
+            return
+        # apps: kill every app the suite touches — lingering search fields,
+        # nav stacks and keyboards die with them
+        apps_txt = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
+                                  capture_output=True, text=True).stdout
+        import re as _re
+        pairs = dict(zip(_re.findall(r'CFBundleIdentifier = "?([^";]+)"?;', apps_txt),
+                         _re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps_txt)))
+        suite_apps = set()
+        for f in (HERE / "tasks").glob("*.yaml"):
+            suite_apps.update(yaml.safe_load(f.read_text()).get("requires_apps") or [])
+        for bid, name in pairs.items():
+            if name in suite_apps:
+                subprocess.run(["xcrun", "simctl", "terminate", "booted", bid],
+                               capture_output=True)
+
     for task_id in args.tasks.split(","):
+        freshen()
         spec = yaml.safe_load((HERE / "tasks" / f"{task_id}.yaml").read_text())
         row = {"task": task_id, "track": args.track, "agent": args.agent,
                "model": args.model, "harness_sha": harness_sha,

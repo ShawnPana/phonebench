@@ -108,7 +108,7 @@ jobs:
           print(','.join(i for n,i in enumerate(ids) if n % 3 == ${{ matrix.shard }}))")
           fi
           MODEL="${{ inputs.model }}"
-          python3 -u run_l1.py --track sim --tasks "$ALL" \
+          python3 -u run_l1.py --track sim --tasks "$ALL" --fresh erase \
             --agent "${{ inputs.agent }}" ${MODEL:+--model "$MODEL"}
       - uses: actions/upload-artifact@v4
         if: always()
