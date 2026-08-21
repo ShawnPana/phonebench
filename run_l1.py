@@ -71,6 +71,20 @@ def run_agent(prompt, skill_text, env, model, max_turns, timeout_s, cwd):
     return data
 
 
+def _wait_sim_ready(env, timeout_s=360):
+    """Fixed sleeps lied to us: a first boot after erase can take minutes and
+    checkers poking a booting sim fail as 'setup-broken'. Ready means the
+    home screen is OCR-visible through the same eyes everything else uses."""
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        r, _ = ph("import json\nprint('::PB::' + json.dumps("
+                  "{'ok': True, 'n': len(ocr())}))", env, timeout=60)
+        if r.get("n", 0) > 6:
+            return True
+        time.sleep(10)
+    return False
+
+
 def final_screenshot(env, dest):
     try:
         r, _ = ph("p = screenshot()\nimport json\n"
@@ -157,7 +171,7 @@ def main():
             subprocess.run(["xcrun", "simctl", "erase", dev], capture_output=True)
             subprocess.run(["xcrun", "simctl", "boot", dev], capture_output=True)
             subprocess.run(["open", "-a", "Simulator"], capture_output=True)
-            time.sleep(75)                       # first boot after erase
+            _wait_sim_ready(env)                 # first boot after erase is SLOW
             subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
                            capture_output=True)
             return
