@@ -21,10 +21,13 @@ import json, os, subprocess, time
 AGENT_BUFFER_S = 90
 
 
-def _sealed_prompt(skill_text, prompt):
+def _sealed_prompt(skill_text, prompt, env=None):
     # Never start with '-': SKILL.md opens with '---' frontmatter and a
     # leading-dash positional reads as a flag to both CLIs (rc=2).
-    return (f"Tool guide for controlling the phone:\n\n{skill_text}\n\n---\n\nTask: {prompt}\n\n"
+    note = (env or {}).get("PHONEBENCH_PROMPT_NOTE", "")
+    note = f"{note}\n\n" if note else ""
+    return (f"Tool guide for controlling the phone:\n\n{skill_text}\n\n---\n\n"
+            f"{note}Task: {prompt}\n\n"
             "Do the task on the phone now, then state the outcome in one "
             "or two sentences. Do not ask questions.")
 
@@ -36,7 +39,7 @@ def run_claude(prompt, skill_text, env, model, timeout_s, cwd):
            "--output-format", "json"]
     if model:
         cmd += ["--model", model]
-    cmd += ["--", _sealed_prompt(skill_text, prompt)]
+    cmd += ["--", _sealed_prompt(skill_text, prompt, env)]
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True,
@@ -75,7 +78,7 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
     extra = os.environ.get("PHONEBENCH_CODEX_ARGS")
     if extra:                       # e.g. -c model_reasoning_effort="medium"
         cmd += extra.split("\x1f") if "\x1f" in extra else extra.split()
-    cmd += ["--", _sealed_prompt(skill_text, prompt)]
+    cmd += ["--", _sealed_prompt(skill_text, prompt, env)]
     t0 = time.time()
     usage, turns, mdl, events = {}, 0, model or "codex-default", []
     result = None
@@ -119,7 +122,7 @@ def run_opencode(prompt, skill_text, env, model, timeout_s, cwd):
     cmd = ["opencode", "run", "--format", "json"]
     if model:
         cmd += ["--model", model]        # provider/model form
-    cmd += ["--", _sealed_prompt(skill_text, prompt)]
+    cmd += ["--", _sealed_prompt(skill_text, prompt, env)]
     t0 = time.time()
     turns, texts, events_tail = 0, [], []
     try:

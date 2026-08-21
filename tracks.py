@@ -33,7 +33,12 @@ TRACKS = {
         # several are booted (one worker per device).
         "platform": "ios",
         "checker_platform": "sim",      # privileged sqlite/simctl checkers
-        "env": {"PHONE_HARNESS_PLATFORM": "sim"},
+        "env": {"PHONE_HARNESS_PLATFORM": "sim",
+                "PHONEBENCH_PROMPT_NOTE":
+                    "Environment note: the target phone is already selected "
+                    "for you. Invoke `phone-harness` exactly as-is — do NOT "
+                    "set PHONE_HARNESS_PLATFORM or any other environment "
+                    "variable, and do not try to connect a different device."},
         "parallel": 3,
         "description": "iOS Simulator, Mirroring-identical control — hermetic iOS track",
     },
