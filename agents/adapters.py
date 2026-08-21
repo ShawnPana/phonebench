@@ -113,4 +113,43 @@ def run_codex(prompt, skill_text, env, model, timeout_s, cwd):
     return row
 
 
-ADAPTERS = {"claude": run_claude, "codex": run_codex}
+
+
+def run_opencode(prompt, skill_text, env, model, timeout_s, cwd):
+    cmd = ["opencode", "run", "--format", "json"]
+    if model:
+        cmd += ["--model", model]        # provider/model form
+    cmd += ["--", _sealed_prompt(skill_text, prompt)]
+    t0 = time.time()
+    turns, texts, events_tail = 0, [], []
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL,
+                           timeout=timeout_s + AGENT_BUFFER_S,
+                           cwd=cwd, env={**os.environ, **env})
+        for line in p.stdout.splitlines():
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            events_tail.append(ev)
+            part = ev.get("part") or {}
+            if ev.get("type") == "tool_use":
+                turns += 1
+            if ev.get("type") == "text" and part.get("text"):
+                texts.append(part["text"])
+        row = {"result": texts[-1] if texts else None, "turns": turns,
+               "cost_usd": None, "usage": {},
+               "model": model or "opencode-default",
+               "raw": {"events": events_tail[-40:]},
+               "rc": p.returncode, "stderr_tail": p.stderr.strip()[-500:]}
+    except subprocess.TimeoutExpired:
+        row = {"result": None, "timeout": True, "turns": turns,
+               "cost_usd": None, "usage": {}, "model": model, "raw": {}}
+    row["agent_wall_s"] = round(time.time() - t0, 1)
+    row["agent"] = "opencode"
+    return row
+
+
+ADAPTERS = {"claude": run_claude, "codex": run_codex,
+            "opencode": run_opencode}
