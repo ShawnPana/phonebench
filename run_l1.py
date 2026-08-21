@@ -158,6 +158,22 @@ def main():
 
     # app availability: ask the environment which apps exist (sim is exact;
     # other tracks run optimistically and fail honestly at task time)
+    daemon_proc = [None]
+
+    def restart_daemon():
+        """One warm process per device: imports and backend held resident.
+        Restarted on every clone swap — the socket path is device-derived,
+        so a stale daemon simply never gets connected to."""
+        if daemon_proc[0]:
+            daemon_proc[0].kill()
+        daemon_proc[0] = subprocess.Popen(
+            ["phone-harness", "--serve"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={**os.environ, **{k: v for k, v in env.items()
+                                  if k != "PHONE_HARNESS_DAEMON"}})
+        env["PHONE_HARNESS_DAEMON"] = "1"
+        os.environ["PHONE_HARNESS_DAEMON"] = "1"
+
     # ---- self-calibration: this machine's harness-op cost vs the reference.
     # A GitHub runner is ~4x slower per op than the M-series the timeouts were
     # written on; scale every budget by MEASURED speed, never a guess.
@@ -184,7 +200,9 @@ def main():
     if platform == "sim":
         subprocess.run(["bash", str(HERE / "tools" / "ensure_pbtools.sh")],
                        capture_output=True)
-        calibrate()
+        restart_daemon()
+        time.sleep(3)
+        calibrate()          # measured HOT: budgets reflect real op cost
         apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
                               capture_output=True, text=True).stdout
         available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
@@ -226,6 +244,7 @@ def main():
             subprocess.run(["open", "-a", "Simulator"], capture_output=True)
             os.environ["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
             env["PHONE_HARNESS_SIM_DEVICE"] = "pb-clone"
+            restart_daemon()
             if not _wait_sim_ready(env, timeout_s=240):
                 # one retry with a brand-new clone before giving up loudly
                 subprocess.run(["xcrun", "simctl", "shutdown", "pb-clone"], capture_output=True)
