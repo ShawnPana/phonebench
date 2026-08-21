@@ -362,10 +362,13 @@ def main():
           cl, raw = ph(resolve_checker(spec["cleanup"], platform, spec.get("cleanup_args")), env)
           (run_dir / f"{task_id}-cleanup.log").write_text(raw)
 
+          check_crashed = (not passed and isinstance(check_detail, dict)
+                           and "no ::PB:: line" in str(check_detail.get("error", "")))
           if escaped:
               passed = False
           row.update(status="disqualified" if escaped else
-                     ("pass" if passed else "fail"),
+                     ("check-error" if check_crashed else
+                      ("pass" if passed else "fail")),
                      env_escape=escaped,
                      check=check_detail, cleanup_ok=bool(cl.get("ok")),
                      agent_wall_s=agent.get("agent_wall_s"),

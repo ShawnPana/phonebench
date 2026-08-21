@@ -100,8 +100,13 @@ def compute_ground_truth(task_id, checker_platform):
         # failed an agent that read the About screen correctly
         out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted", "-j"],
                              capture_output=True, text=True).stdout
-        m = re.search(r"iOS[.-](\d+)[.-](\d+)", out)
-        return f"The version is 'iOS {m.group(1)}.{m.group(2)}'." if m else None
+        data = json.loads(out or "{}")
+        for runtime, devs in (data.get("devices") or {}).items():
+            if any(d.get("state") == "Booted" for d in devs):
+                m = re.search(r"iOS[.-](\d+)[.-](\d+)", runtime)
+                if m:
+                    return f"The version is 'iOS {m.group(1)}.{m.group(2)}'."
+        return None
     if task_id == "photos-count":
         db = sqlite3.connect(_sim_data() + "/Media/PhotoData/Photos.sqlite")
         n = db.execute("SELECT count(*) FROM ZASSET WHERE ZTRASHEDSTATE=0").fetchone()[0]

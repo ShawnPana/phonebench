@@ -183,12 +183,14 @@ REGISTRY["none"] = {"ios": COMMON + 'home(); wait_stable(); emit(ok=True)',
 _SIM_COMMON = COMMON + '''
 import re, sqlite3, subprocess
 def _udid():
-    out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted"],
-                         capture_output=True, text=True).stdout
-    m = re.search(r"\\(([0-9A-Fa-f-]{36})\\).*\\(Booted\\)", out)
-    if not m:
-        raise RuntimeError("no booted simulator")
-    return m.group(1)
+    for attempt in range(4):
+        out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted"],
+                             capture_output=True, text=True).stdout
+        m = re.search(r"\\(([0-9A-Fa-f-]{36})\\).*\\(Booted\\)", out)
+        if m:
+            return m.group(1)
+        time.sleep(5)          # sims blip under heavy app churn
+    raise RuntimeError("no booted simulator")
 def _ab():
     import os.path
     return os.path.expanduser(
