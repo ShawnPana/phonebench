@@ -21,6 +21,12 @@ on:
       tasks:
         description: "comma-separated task ids (blank = whole suite)"
         default: ""
+      shards:
+        description: "parallel runners (tasks split between them)"
+        default: "10"
+      smoke_only:
+        description: "true = run only the see/touch probe (no agent, no secrets)"
+        default: "false"
 
 env:
   PB_DEVICE: "pb-ci-iPhone"
@@ -65,11 +71,12 @@ jobs:
 
   bench:
     needs: smoke
+    if: ${{ inputs.smoke_only != 'true' }}
     runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - uses: actions/checkout@v4
       - name: Pin phone-harness
@@ -105,7 +112,7 @@ jobs:
             ALL=$(python3 -c "
           import yaml, glob
           ids=[yaml.safe_load(open(f))['id'] for f in sorted(glob.glob('tasks/*.yaml'))]
-          print(','.join(i for n,i in enumerate(ids) if n % 3 == ${{ matrix.shard }}))")
+          print(','.join(i for n,i in enumerate(ids) if n % ${{ inputs.shards }} == ${{ matrix.shard }}))")
           fi
           MODEL="${{ inputs.model }}"
           python3 -u run_l1.py --track sim --tasks "$ALL" --fresh erase \
@@ -118,7 +125,7 @@ jobs:
 
   merge:
     needs: bench
-    if: always()
+    if: ${{ always() && inputs.smoke_only != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
