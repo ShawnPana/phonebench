@@ -77,10 +77,13 @@ def _wait_sim_ready(env, timeout_s=360):
     home screen is OCR-visible through the same eyes everything else uses."""
     t0 = time.time()
     while time.time() - t0 < timeout_s:
-        r, _ = ph("import json\nprint('::PB::' + json.dumps("
-                  "{'ok': True, 'n': len(ocr())}))", env, timeout=60)
-        if r.get("n", 0) > 6:
-            return True
+        try:
+            r, _ = ph("import json\nprint('::PB::' + json.dumps("
+                      "{'ok': True, 'n': len(ocr())}))", env, timeout=60)
+            if r.get("n", 0) > 6:
+                return True
+        except Exception:
+            pass          # a hanging probe against a booting sim is NORMAL
         time.sleep(10)
     return False
 
