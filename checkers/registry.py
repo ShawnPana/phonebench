@@ -515,3 +515,26 @@ emit(ok=(r.get("count") == 0), remaining=r.get("count"))
 '''
 
 REGISTRY["contacts.remove"]["sim"] = REGISTRY["contacts.assert_absent"]["sim"]
+
+
+# ---- reminders via EventKit: the drafts are dead ------------------------
+# There is no reminders store file to read; EventKit through PBTools is the
+# sanctioned truth (same pattern as contacts). OCR drafts mis-scored two
+# CI tasks; these read and mutate the real store.
+REGISTRY["reminders.assert_absent"]["sim"] = _PBTOOL + '''
+r = pbtool("rremove", "__TITLE__")
+home(); wait_stable()
+emit(ok=True, removed=r.get("removed"))
+'''
+
+REGISTRY["reminders.exists"]["sim"] = _PBTOOL + '''
+r = pbtool("rcount", "__TITLE__")
+emit(ok=bool(r.get("count")), count=r.get("count"), titles=r.get("titles"))
+'''
+
+REGISTRY["reminders.remove"]["sim"] = REGISTRY["reminders.assert_absent"]["sim"]
+REGISTRY["compound.cleanup_carol_reminder"]["sim"] = _PBTOOL + '''
+r = pbtool("rremove", "call 555-0142")
+home(); wait_stable()
+emit(ok=True, removed=r.get("removed"))
+'''

@@ -288,93 +288,104 @@ def main():
                                capture_output=True)
 
     for task_id in args.tasks.split(","):
-        freshen()
-        spec = load_task(task_id)
-        row = {"task": task_id, "track": args.track, "agent": args.agent,
-               "model": args.model, "harness_sha": harness_sha,
-               "started": time.strftime("%F %T")}
-        print(f"\n=== {task_id} [{args.track}] ===")
+      try:
+          freshen()
+          spec = load_task(task_id)
+          row = {"task": task_id, "track": args.track, "agent": args.agent,
+                 "model": args.model, "harness_sha": harness_sha,
+                 "started": time.strftime("%F %T")}
+          print(f"\n=== {task_id} [{args.track}] ===")
 
-        needs = spec.get("requires_apps") or []
-        if available is not None and not set(needs) <= available:
-            missing = sorted(set(needs) - available)
-            row.update(status="unsupported-on-track", missing_apps=missing)
-            print(f"  UNSUPPORTED here: needs {missing}")
-            with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
-            continue
+          needs = spec.get("requires_apps") or []
+          if available is not None and not set(needs) <= available:
+              missing = sorted(set(needs) - available)
+              row.update(status="unsupported-on-track", missing_apps=missing)
+              print(f"  UNSUPPORTED here: needs {missing}")
+              with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
+              continue
 
-        # setup
-        r, raw = ph(resolve_checker(spec["setup"], platform, spec.get("setup_args")), env)
-        (run_dir / f"{task_id}-setup.log").write_text(raw)
-        if r.get("skip"):
-            row.update(status="skipped", reason=r.get("reason"))
-            print(f"  SKIPPED: {r.get('reason')}")
-            with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
-            continue
-        if not r.get("ok"):
-            row.update(status="setup-failed", detail=r)
-            print(f"  setup FAILED: {r}")
-            with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
-            continue
+          # setup
+          r, raw = ph(resolve_checker(spec["setup"], platform, spec.get("setup_args")), env)
+          (run_dir / f"{task_id}-setup.log").write_text(raw)
+          if r.get("skip"):
+              row.update(status="skipped", reason=r.get("reason"))
+              print(f"  SKIPPED: {r.get('reason')}")
+              with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
+              continue
+          if not r.get("ok"):
+              row.update(status="setup-failed", detail=r)
+              print(f"  setup FAILED: {r}")
+              with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
+              continue
 
-        # sealed agent
-        print(f"  {args.agent} running ({args.model or 'default model'}, "
-              f"{spec['timeout_s']}s cap) ...", flush=True)
-        trace_dir = run_dir / f"{task_id}-{args.agent}-trace"
-        agent_env = {**env, "PHONE_HARNESS_TRACE": str(trace_dir)}
-        budget_s = int(spec["timeout_s"] * speed_mult)
-        agent_env["PHONEBENCH_SPEED_MULT"] = str(round(speed_mult, 2))
-        agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, agent_env,
-                                     args.model, budget_s, str(agent_cwd))
-        row["speed_mult"] = round(speed_mult, 2)
-        row["budget_s"] = budget_s
-        (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
+          # sealed agent
+          print(f"  {args.agent} running ({args.model or 'default model'}, "
+                f"{spec['timeout_s']}s cap) ...", flush=True)
+          trace_dir = run_dir / f"{task_id}-{args.agent}-trace"
+          agent_env = {**env, "PHONE_HARNESS_TRACE": str(trace_dir)}
+          budget_s = int(spec["timeout_s"] * speed_mult)
+          agent_env["PHONEBENCH_SPEED_MULT"] = str(round(speed_mult, 2))
+          agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, agent_env,
+                                       args.model, budget_s, str(agent_cwd))
+          row["speed_mult"] = round(speed_mult, 2)
+          row["budget_s"] = budget_s
+          (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
-        # integrity: an agent that manipulated the device outside
-        # phone-harness is disqualified no matter what the checker says
-        escaped = bool(ESCAPE_PAT.search(json.dumps(agent.get("raw", {}))))
+          # integrity: an agent that manipulated the device outside
+          # phone-harness is disqualified no matter what the checker says
+          escaped = bool(ESCAPE_PAT.search(json.dumps(agent.get("raw", {}))))
 
-        # check — never trusts the agent
-        if spec["check"] == "answer.judge":
-            gt = spec.get("ground_truth") or ""
-            if gt.startswith("COMPUTED"):
-                gt = compute_ground_truth(task_id, platform) or gt
-            verdict = judge_answer(spec["prompt"], agent.get("result"), gt)
-            passed = verdict["verdict"]
-            check_detail = {**verdict, "ground_truth": gt,
-                            "answer_excerpt": str(agent.get("result", ""))[:300]}
-        elif spec["check"] == "answer.contains":
-            want = spec["check_args"]["substring"].lower()
-            passed = want in str(agent.get("result", "")).lower()
-            check_detail = {"answer_excerpt": str(agent.get("result", ""))[:300]}
-        else:
-            c, raw = ph(resolve_checker(spec["check"], platform, spec.get("check_args")), env)
-            (run_dir / f"{task_id}-check.log").write_text(raw)
-            passed, check_detail = bool(c.get("ok")), c
+          # check — never trusts the agent
+          if spec["check"] == "answer.judge":
+              gt = spec.get("ground_truth") or ""
+              if gt.startswith("COMPUTED"):
+                  gt = compute_ground_truth(task_id, platform) or gt
+              verdict = judge_answer(spec["prompt"], agent.get("result"), gt)
+              passed = verdict["verdict"]
+              check_detail = {**verdict, "ground_truth": gt,
+                              "answer_excerpt": str(agent.get("result", ""))[:300]}
+          elif spec["check"] == "answer.contains":
+              want = spec["check_args"]["substring"].lower()
+              passed = want in str(agent.get("result", "")).lower()
+              check_detail = {"answer_excerpt": str(agent.get("result", ""))[:300]}
+          else:
+              c, raw = ph(resolve_checker(spec["check"], platform, spec.get("check_args")), env)
+              (run_dir / f"{task_id}-check.log").write_text(raw)
+              passed, check_detail = bool(c.get("ok")), c
 
-        final_screenshot(env, run_dir / f"{task_id}-{args.agent}-final.png")
+          final_screenshot(env, run_dir / f"{task_id}-{args.agent}-final.png")
 
-        # cleanup — always
-        cl, raw = ph(resolve_checker(spec["cleanup"], platform, spec.get("cleanup_args")), env)
-        (run_dir / f"{task_id}-cleanup.log").write_text(raw)
+          # cleanup — always
+          cl, raw = ph(resolve_checker(spec["cleanup"], platform, spec.get("cleanup_args")), env)
+          (run_dir / f"{task_id}-cleanup.log").write_text(raw)
 
-        if escaped:
-            passed = False
-        row.update(status="disqualified" if escaped else
-                   ("pass" if passed else "fail"),
-                   env_escape=escaped,
-                   check=check_detail, cleanup_ok=bool(cl.get("ok")),
-                   agent_wall_s=agent.get("agent_wall_s"),
-                   turns=agent.get("turns"),
-                   cost_usd=agent.get("cost_usd"),
-                   usage=agent.get("usage", {}),
-                   failure_class="env-escape" if escaped else
-                                 (None if passed else classify(agent)))
-        print(f"  {'PASS' if passed else 'FAIL'}  wall={row['agent_wall_s']}s "
-              f"turns={row['turns']} cost=${row['cost_usd']}"
-              + ("" if passed else f"  [{row['failure_class']}]"))
-        with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
+          if escaped:
+              passed = False
+          row.update(status="disqualified" if escaped else
+                     ("pass" if passed else "fail"),
+                     env_escape=escaped,
+                     check=check_detail, cleanup_ok=bool(cl.get("ok")),
+                     agent_wall_s=agent.get("agent_wall_s"),
+                     turns=agent.get("turns"),
+                     cost_usd=agent.get("cost_usd"),
+                     usage=agent.get("usage", {}),
+                     failure_class="env-escape" if escaped else
+                                   (None if passed else classify(agent)))
+          print(f"  {'PASS' if passed else 'FAIL'}  wall={row['agent_wall_s']}s "
+                f"turns={row['turns']} cost=${row['cost_usd']}"
+                + ("" if passed else f"  [{row['failure_class']}]"))
+          with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
 
+      except Exception as e:
+          # a single task's infra crash must never kill the shard:
+          # record it as an infra-error row and move on (shard-1 lost
+          # 3 of 4 tasks to one silent crash)
+          import traceback; traceback.print_exc()
+          with open(rows_path, "a") as f:
+              f.write(json.dumps({"task": task_id, "track": args.track,
+                  "agent": args.agent, "status": "infra-error",
+                  "error": str(e)[:300]}) + "\n")
+          print(f"  INFRA-ERROR: {str(e)[:120]}")
     print(f"\nresults -> {run_dir}")
     return 0
 

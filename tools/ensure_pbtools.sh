@@ -10,4 +10,5 @@ fi
 cp -f pbcontacts PBTools.app/
 xcrun simctl install booted PBTools.app
 xcrun simctl privacy booted grant contacts com.phonebench.tools
+xcrun simctl privacy booted grant reminders com.phonebench.tools
 echo "pbtools ready"

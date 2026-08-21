@@ -95,10 +95,13 @@ def compute_ground_truth(task_id, checker_platform):
     if checker_platform != "sim":
         return None
     if task_id == "settings-version":
-        out = subprocess.run(["xcrun", "simctl", "list", "runtimes"],
+        # the BOOTED DEVICE's runtime, not the first installed runtime —
+        # a CI runner booted iOS 26.2 while the list led with 18.5, and we
+        # failed an agent that read the About screen correctly
+        out = subprocess.run(["xcrun", "simctl", "list", "devices", "booted", "-j"],
                              capture_output=True, text=True).stdout
-        m = re.search(r"iOS ([\d.]+)", out)
-        return f"The version is 'iOS {m.group(1)}'." if m else None
+        m = re.search(r"iOS[.-](\d+)[.-](\d+)", out)
+        return f"The version is 'iOS {m.group(1)}.{m.group(2)}'." if m else None
     if task_id == "photos-count":
         db = sqlite3.connect(_sim_data() + "/Media/PhotoData/Photos.sqlite")
         n = db.execute("SELECT count(*) FROM ZASSET WHERE ZTRASHEDSTATE=0").fetchone()[0]

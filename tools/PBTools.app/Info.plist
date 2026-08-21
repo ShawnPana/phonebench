@@ -8,5 +8,7 @@
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>MinimumOSVersion</key><string>15.0</string>
   <key>NSContactsUsageDescription</key><string>benchmark seeding</string>
+  <key>NSRemindersUsageDescription</key><string>benchmark seeding</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>benchmark seeding</string>
   <key>UIDeviceFamily</key><array><integer>1</integer></array>
 </dict></plist>

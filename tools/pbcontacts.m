@@ -4,12 +4,54 @@
 //   pbcontacts remove "Carol" "Phonebench"
 //   pbcontacts count
 @import Contacts;
+@import EventKit;
 @import Foundation;
+
+// Reminders have no discoverable store file on disk; EventKit is the
+// sanctioned channel (TCC-granted via `simctl privacy grant reminders`).
+static int reminders_cmd(NSString *cmd, int argc, char **argv) {
+    EKEventStore *ek = [EKEventStore new];
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block NSArray<EKReminder *> *found = @[];
+    NSPredicate *pred = [ek predicateForRemindersInCalendars:nil];
+    [ek fetchRemindersMatchingPredicate:pred completion:^(NSArray *rs) {
+        found = rs ?: @[];
+        dispatch_semaphore_signal(sem);
+    }];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC));
+    NSString *needle = argc > 2 ? [@(argv[2]) lowercaseString] : nil;
+    NSMutableArray *hits = [NSMutableArray new];
+    for (EKReminder *r in found)
+        if (!needle || [[r.title lowercaseString] containsString:needle])
+            [hits addObject:r];
+    if ([cmd isEqualToString:@"rcount"]) {
+        NSMutableArray *titles = [NSMutableArray new];
+        for (EKReminder *r in hits) [titles addObject:r.title ?: @""];
+        NSData *j = [NSJSONSerialization dataWithJSONObject:titles options:0 error:nil];
+        printf("{\"ok\": true, \"count\": %lu, \"titles\": %s}\n",
+               (unsigned long)hits.count,
+               [[[NSString alloc] initWithData:j encoding:4] UTF8String]);
+        return 0;
+    }
+    if ([cmd isEqualToString:@"rremove"]) {
+        NSError *err = nil;
+        for (EKReminder *r in hits)
+            [ek removeReminder:r commit:NO error:&err];
+        [ek commit:&err];
+        printf("{\"ok\": %s, \"removed\": %lu}\n", err ? "false" : "true",
+               (unsigned long)hits.count);
+        return 0;
+    }
+    printf("{\"ok\": false, \"error\": \"unknown reminders cmd\"}\n");
+    return 1;
+}
 
 int main(int argc, char **argv) {
     @autoreleasepool {
-        CNContactStore *store = [CNContactStore new];
         NSString *cmd = argc > 1 ? @(argv[1]) : @"count";
+        if ([cmd hasPrefix:@"r"] && ![cmd isEqualToString:@"remove"])
+            return reminders_cmd(cmd, argc, argv);
+        CNContactStore *store = [CNContactStore new];
         NSError *err = nil;
         if ([cmd isEqualToString:@"add"]) {
             CNMutableContact *c = [CNMutableContact new];
