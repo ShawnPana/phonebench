@@ -208,7 +208,9 @@ def main():
         # sealed agent
         print(f"  {args.agent} running ({args.model or 'default model'}, "
               f"{spec['timeout_s']}s cap) ...", flush=True)
-        agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, env,
+        trace_dir = run_dir / f"{task_id}-{args.agent}-trace"
+        agent_env = {**env, "PHONE_HARNESS_TRACE": str(trace_dir)}
+        agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, agent_env,
                                      args.model, spec["timeout_s"], str(agent_cwd))
         (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
