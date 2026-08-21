@@ -241,6 +241,201 @@ REGISTRY["contacts.remove"]["sim"] = REGISTRY["contacts.assert_absent"]["sim"]
 REGISTRY["none"]["sim"] = REGISTRY["none"]["ios"]
 
 
+
+
+# ---- sim: seeding + the wider suite -------------------------------------
+_SIM_DB = _SIM_COMMON + '''
+def _data():
+    import os.path
+    return os.path.expanduser(
+        "~/Library/Developer/CoreSimulator/Devices/%s/data" % _udid())
+def _stubbed(db):
+    """Execute with contactsd-style trigger functions stubbed on demand."""
+    class W:
+        def __init__(s2, db): s2.db = db
+        def ex(s2, *a):
+            for _ in range(24):
+                try: return s2.db.execute(*a)
+                except sqlite3.OperationalError as e:
+                    m = str(e)
+                    if "no such function:" not in m: raise
+                    s2.db.create_function(m.split("no such function:")[1].strip(), -1, lambda *x: None)
+    return W(db)
+'''
+
+REGISTRY["contacts.seed"] = {"sim": _SIM_DB + '''
+first, last = ("__NAME__".split(" ", 1) + [""])[:2]
+db = sqlite3.connect(_ab()); w = _stubbed(db)
+rows = w.ex("SELECT ROWID FROM ABPerson WHERE First=? AND Last=?", (first, last)).fetchall()
+for (rid,) in rows:
+    w.ex("DELETE FROM ABMultiValue WHERE record_id=?", (rid,))
+    w.ex("DELETE FROM ABPerson WHERE ROWID=?", (rid,))
+w.ex("INSERT INTO ABPerson (First, Last) VALUES (?, ?)", (first, last))
+rid = w.ex("SELECT ROWID FROM ABPerson WHERE First=? AND Last=?", (first, last)).fetchone()[0]
+w.ex("INSERT INTO ABMultiValue (record_id, property, label, value) VALUES (?, 3, 1, ?)",
+     (rid, "(555) 014-2"[:0] + "555-0142"))
+db.commit(); db.close()
+subprocess.run(["xcrun", "simctl", "terminate", _udid(), "com.apple.MobileAddressBook"],
+               capture_output=True)
+home(); wait_stable()
+emit(ok=True, seeded_rowid=rid)
+'''}
+
+REGISTRY["contacts.is_absent"] = {"sim": _SIM_DB + '''
+first, last = ("__NAME__".split(" ", 1) + [""])[:2]
+db = sqlite3.connect(_ab())
+n = db.execute("SELECT count(*) FROM ABPerson WHERE First=? AND Last=?", (first, last)).fetchone()[0]
+db.close()
+emit(ok=(n == 0), remaining=n)
+'''}
+
+REGISTRY["contacts.count"] = {"sim": _SIM_DB + '''
+db = sqlite3.connect(_ab())
+n = db.execute("SELECT count(*) FROM ABPerson WHERE First IS NOT NULL OR Last IS NOT NULL").fetchone()[0]
+db.close()
+emit(ok=True, count=n)
+'''}
+
+# appearance: simctl is both actuator and ground truth
+_APPEAR = _SIM_COMMON + '''
+def _appearance():
+    return subprocess.run(["xcrun", "simctl", "ui", _udid(), "appearance"],
+                          capture_output=True, text=True).stdout.strip()
+def _set_appearance(v):
+    subprocess.run(["xcrun", "simctl", "ui", _udid(), "appearance", v], capture_output=True)
+'''
+REGISTRY["appearance.assert_light"] = {"sim": _APPEAR + '_set_appearance("light"); emit(ok=True)'}
+REGISTRY["appearance.assert_dark"]  = {"sim": _APPEAR + '_set_appearance("dark"); emit(ok=True)'}
+REGISTRY["appearance.is_dark"]  = {"sim": _APPEAR + 'emit(ok=_appearance()=="dark", value=_appearance())'}
+REGISTRY["appearance.is_light"] = {"sim": _APPEAR + 'emit(ok=_appearance()=="light", value=_appearance())'}
+REGISTRY["appearance.set_light"] = {"sim": _APPEAR + '_set_appearance("light"); emit(ok=True)'}
+
+# safari bookmarks: Bookmarks.db
+_SAFARI = _SIM_DB + '''
+def _bm():
+    return _data() + "/Library/Safari/Bookmarks.db"
+'''
+REGISTRY["safari.assert_no_bookmark"] = {"sim": _SAFARI + '''
+db = sqlite3.connect(_bm()); w = _stubbed(db)
+w.ex("DELETE FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",))
+db.commit(); db.close()
+emit(ok=True)
+'''}
+REGISTRY["safari.has_bookmark"] = {"sim": _SAFARI + '''
+db = sqlite3.connect(_bm())
+n = db.execute("SELECT count(*) FROM bookmarks WHERE url LIKE ?", ("%__HOST__%",)).fetchone()[0]
+db.close()
+emit(ok=(n > 0), matches=n)
+'''}
+REGISTRY["safari.remove_bookmark"] = {"sim": REGISTRY["safari.assert_no_bookmark"]["sim"]}
+
+# calendar: Calendar.sqlitedb, CalendarItem.summary
+_CALDB = _SIM_DB + '''
+def _cal():
+    return _data() + "/Library/Calendar/Calendar.sqlitedb"
+'''
+REGISTRY["calendar.assert_absent"] = {"sim": _CALDB + '''
+db = sqlite3.connect(_cal()); w = _stubbed(db)
+w.ex("DELETE FROM CalendarItem WHERE summary LIKE ?", ("%__TITLE__%",))
+db.commit(); db.close()
+subprocess.run(["xcrun", "simctl", "terminate", _udid(), "com.apple.mobilecal"], capture_output=True)
+home(); wait_stable()
+emit(ok=True)
+'''}
+REGISTRY["calendar.has_event"] = {"sim": _CALDB + '''
+db = sqlite3.connect(_cal())
+rows = db.execute("SELECT summary FROM CalendarItem WHERE summary LIKE ?", ("%__TITLE__%",)).fetchall()
+db.close()
+emit(ok=len(rows) > 0, found=[r[0] for r in rows][:5])
+'''}
+REGISTRY["calendar.remove"] = {"sim": REGISTRY["calendar.assert_absent"]["sim"]}
+
+# photos: Photos.sqlite ZASSET.ZFAVORITE
+_PHOTODB = _SIM_DB + '''
+def _ph():
+    return _data() + "/Media/PhotoData/Photos.sqlite"
+'''
+REGISTRY["photos.assert_no_favorites"] = {"sim": _PHOTODB + '''
+db = sqlite3.connect(_ph()); w = _stubbed(db)
+w.ex("UPDATE ZASSET SET ZFAVORITE=0 WHERE ZFAVORITE=1")
+db.commit(); db.close()
+subprocess.run(["xcrun", "simctl", "terminate", _udid(), "com.apple.mobileslideshow"], capture_output=True)
+home(); wait_stable()
+emit(ok=True)
+'''}
+REGISTRY["photos.newest_is_favorite"] = {"sim": _PHOTODB + '''
+db = sqlite3.connect(_ph())
+row = db.execute("SELECT ZFAVORITE FROM ZASSET WHERE ZTRASHEDSTATE=0 ORDER BY ZDATECREATED DESC LIMIT 1").fetchone()
+db.close()
+emit(ok=bool(row and row[0] == 1), newest_favorite=row[0] if row else None)
+'''}
+REGISTRY["photos.unfavorite_all"] = {"sim": REGISTRY["photos.assert_no_favorites"]["sim"]}
+REGISTRY["photos.count"] = {"sim": _PHOTODB + '''
+db = sqlite3.connect(_ph())
+n = db.execute("SELECT count(*) FROM ZASSET WHERE ZTRASHEDSTATE=0").fetchone()[0]
+db.close()
+emit(ok=True, count=n)
+'''}
+
+# reminders: store location is created lazily -> OCR until verified pass
+_REM_OCR = COMMON + '''
+def _open_reminders():
+    home(); wait_stable(); launch("Reminders"); wait_stable(); time.sleep(1)
+'''
+REGISTRY["reminders.assert_absent"] = {"sim": _REM_OCR + '''
+_open_reminders()
+# TODO(verified-pass): move to the Reminders sqlite store once it exists.
+emit(ok=not visible("__TITLE__"[:14]), note="ocr-based")
+home(); wait_stable()
+'''}
+REGISTRY["reminders.exists"] = {"sim": _REM_OCR + '''
+_open_reminders()
+hit = visible("__TITLE__"[:14])
+if not hit:
+    for row in ocr():
+        if "All" == row["text"].strip() or "Today" in row["text"]:
+            tap(row["x"], row["y"]); time.sleep(1.5); break
+    hit = visible("__TITLE__"[:14])
+home(); wait_stable()
+emit(ok=hit, note="ocr-based")
+'''}
+REGISTRY["reminders.remove"] = {"sim": COMMON + '''
+# TODO(verified-pass): sqlite delete; UI swipe-delete is unreliable. Erase-on-
+# schedule keeps the sim clean between suite runs regardless.
+home(); wait_stable()
+emit(ok=True, note="deferred to sim erase")
+'''}
+REGISTRY["compound.cleanup_carol_reminder"] = {"sim": REGISTRY["reminders.remove"]["sim"]}
+
+# files + generic screen check
+REGISTRY["files.assert_no_pb_saves"] = {"sim": _SIM_DB + '''
+import glob, os
+docs = _data() + "/Containers/Shared/AppGroup"
+before = len(glob.glob(docs + "/*/File Provider Storage/*"))
+open("/tmp/pb-files-baseline", "w").write(str(before))
+home(); wait_stable()
+emit(ok=True, baseline=before)
+'''}
+REGISTRY["files.has_new_save"] = {"sim": _SIM_DB + '''
+import glob
+docs = _data() + "/Containers/Shared/AppGroup"
+now = len(glob.glob(docs + "/*/File Provider Storage/*"))
+base = int(open("/tmp/pb-files-baseline").read() or 0)
+emit(ok=now > base, before=base, after=now)
+'''}
+REGISTRY["files.cleanup_saves"] = {"sim": COMMON + 'home(); wait_stable(); emit(ok=True, note="deferred to sim erase")'}
+
+REGISTRY["screen.app_visible"] = {
+  "sim": COMMON + '''
+import re
+pats = "__MARKERS__".split("|")
+seen = " ".join(texts())
+ok = any(p.lower() in seen.lower() for p in pats)
+emit(ok=ok, seen_excerpt=seen[:200])
+'''}
+REGISTRY["screen.app_visible"]["ios"] = REGISTRY["screen.app_visible"]["sim"]
+
+
 # "answer.contains" is handled by the runner itself: the check runs against
 # the agent's final answer text, not the phone.
 

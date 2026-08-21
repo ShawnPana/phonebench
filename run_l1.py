@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 from tracks import resolve as resolve_track
 from checkers.registry import resolve as resolve_checker
 from agents.adapters import ADAPTERS
+from judge import judge as judge_answer, compute_ground_truth
 
 AGENT_BUFFER_S = 90          # process grace beyond the task's own timeout
 FAILURE_SIGNS = [            # transcript signatures -> tool-vs-model tags
@@ -123,12 +124,29 @@ def main():
         print(f"device not ready ({state.get('s')}) — connect the phone and rerun")
         return 1
 
+    # app availability: ask the environment which apps exist (sim is exact;
+    # other tracks run optimistically and fail honestly at task time)
+    available = None
+    if platform == "sim":
+        apps = subprocess.run(["xcrun", "simctl", "listapps", "booted"],
+                              capture_output=True, text=True).stdout
+        available = set(re.findall(r'CFBundleDisplayName = "?([^";]+)"?;', apps))
+        print(f"apps on device: {len(available)}")
+
     for task_id in args.tasks.split(","):
         spec = yaml.safe_load((HERE / "tasks" / f"{task_id}.yaml").read_text())
         row = {"task": task_id, "track": args.track, "agent": args.agent,
                "model": args.model, "harness_sha": harness_sha,
                "started": time.strftime("%F %T")}
         print(f"\n=== {task_id} [{args.track}] ===")
+
+        needs = spec.get("requires_apps") or []
+        if available is not None and not set(needs) <= available:
+            missing = sorted(set(needs) - available)
+            row.update(status="unsupported-on-track", missing_apps=missing)
+            print(f"  UNSUPPORTED here: needs {missing}")
+            with open(rows_path, "a") as f: f.write(json.dumps(row) + "\n")
+            continue
 
         # setup
         r, raw = ph(resolve_checker(spec["setup"], platform, spec.get("setup_args")), env)
@@ -152,7 +170,15 @@ def main():
         (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
         # check — never trusts the agent
-        if spec["check"] == "answer.contains":
+        if spec["check"] == "answer.judge":
+            gt = spec.get("ground_truth") or ""
+            if gt.startswith("COMPUTED"):
+                gt = compute_ground_truth(task_id, platform) or gt
+            verdict = judge_answer(spec["prompt"], agent.get("result"), gt)
+            passed = verdict["verdict"]
+            check_detail = {**verdict, "ground_truth": gt,
+                            "answer_excerpt": str(agent.get("result", ""))[:300]}
+        elif spec["check"] == "answer.contains":
             want = spec["check_args"]["substring"].lower()
             passed = want in str(agent.get("result", "")).lower()
             check_detail = {"answer_excerpt": str(agent.get("result", ""))[:300]}
