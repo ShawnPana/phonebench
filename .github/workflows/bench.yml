@@ -1,0 +1,140 @@
+name: bench
+# The hermetic iOS lane in CI: each runner boots its own simulator and runs a
+# shard of the suite with a sealed agent. Agents authenticate with
+# SUBSCRIPTION credentials from repo secrets (CLAUDE_CODE_OAUTH_TOKEN via
+# `claude setup-token`; CODEX_AUTH_JSON = the contents of ~/.codex/auth.json)
+# so CI runs bill the same plans as local runs.
+#
+# Job 0 is the go/no-go: phonebench drives the simulator through window
+# capture + HID events, and a headless CI runner must PROVE that modality
+# works (ocr + tap round-trip) before any agent tokens are spent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "agent to run (claude | codex | opencode)"
+        default: "claude"
+      model:
+        description: "model override (blank = agent default)"
+        default: ""
+      tasks:
+        description: "comma-separated task ids (blank = whole suite)"
+        default: ""
+
+env:
+  PB_DEVICE: "pb-ci-iPhone"
+
+jobs:
+  smoke:
+    runs-on: macos-15
+    outputs:
+      ok: ${{ steps.probe.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin phone-harness
+        run: |
+          pip3 install --break-system-packages pyyaml pyobjc-framework-Quartz pyobjc-framework-Vision pyobjc-framework-Cocoa
+          python3 setup_harness.py
+      - name: Boot a simulator
+        run: |
+          UDID=$(xcrun simctl create "$PB_DEVICE" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+            $(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS[^ )]*' | tail -1))
+          xcrun simctl boot "$UDID"
+          open -a Simulator
+          sleep 60
+      - name: "Probe: can this runner SEE and TOUCH the sim window?"
+        id: probe
+        run: |
+          export PATH="$PWD/.harness:$PATH" PHONE_HARNESS_PLATFORM=sim
+          phone-harness <<'PY'
+          import sys, time
+          state = connection_state()
+          print("state:", state)
+          if state != "ready":
+              sys.exit(1)
+          rows = ocr()
+          print("ocr texts:", len(rows))
+          if not rows:
+              sys.exit(2)          # capture works only with a real windowserver
+          home(); time.sleep(1)
+          print("tap/nav ok")
+          PY
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+  bench:
+    needs: smoke
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin phone-harness
+        run: |
+          pip3 install --break-system-packages pyyaml pyobjc-framework-Quartz pyobjc-framework-Vision pyobjc-framework-Cocoa
+          python3 setup_harness.py
+      - name: Boot a simulator
+        run: |
+          UDID=$(xcrun simctl create "$PB_DEVICE" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+            $(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS[^ )]*' | tail -1))
+          xcrun simctl boot "$UDID"
+          open -a Simulator
+          sleep 90        # first boot of a fresh device
+      - name: Install agent CLI + auth
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          case "${{ inputs.agent }}" in
+            claude)   npm install -g @anthropic-ai/claude-code ;;
+            codex)    brew install codex || npm install -g @openai/codex
+                      mkdir -p ~/.codex && printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json ;;
+            opencode) brew install opencode ;;
+          esac
+      - name: Run shard
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          export PATH="$PWD/.harness:$PATH"
+          ALL="${{ inputs.tasks }}"
+          if [ -z "$ALL" ]; then
+            ALL=$(python3 -c "
+          import yaml, glob
+          ids=[yaml.safe_load(open(f))['id'] for f in sorted(glob.glob('tasks/*.yaml'))]
+          print(','.join(i for n,i in enumerate(ids) if n % 3 == ${{ matrix.shard }}))")
+          fi
+          MODEL="${{ inputs.model }}"
+          python3 -u run_l1.py --track sim --tasks "$ALL" \
+            --agent "${{ inputs.agent }}" ${MODEL:+--model "$MODEL"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-shard-${{ matrix.shard }}
+          path: results/
+
+  merge:
+    needs: bench
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all-results
+      - name: Combine
+        run: |
+          find all-results -name results.jsonl -exec cat {} + > combined.jsonl
+          python3 - <<'EOF'
+          import json
+          rows = [json.loads(l) for l in open("combined.jsonl")]
+          p = sum(1 for r in rows if r["status"] == "pass")
+          f = sum(1 for r in rows if r["status"] == "fail")
+          print(f"{p} pass / {f} fail / {len(rows)-p-f} other of {len(rows)}")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: combined-results
+          path: combined.jsonl
