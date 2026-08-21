@@ -82,9 +82,10 @@ def _echo_codex(line):
 
 
 def run_claude(prompt, skill_text, env, model, timeout_s, cwd):
+    max_turns = str(int(60 * float(env.get("PHONEBENCH_SPEED_MULT", "1"))))
     cmd = ["claude", "-p",
            "--dangerously-skip-permissions",
-           "--max-turns", "60",              # high: wall-clock is the cap
+           "--max-turns", max_turns,         # scales with measured machine speed
            "--output-format", "stream-json", "--verbose"]
     if model:
         cmd += ["--model", model]

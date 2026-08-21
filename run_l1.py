@@ -304,10 +304,11 @@ def main():
         trace_dir = run_dir / f"{task_id}-{args.agent}-trace"
         agent_env = {**env, "PHONE_HARNESS_TRACE": str(trace_dir)}
         budget_s = int(spec["timeout_s"] * speed_mult)
+        agent_env["PHONEBENCH_SPEED_MULT"] = str(round(speed_mult, 2))
         agent = ADAPTERS[args.agent](spec["prompt"].strip(), skill_text, agent_env,
                                      args.model, budget_s, str(agent_cwd))
-        agent["speed_mult"] = round(speed_mult, 2)
-        agent["budget_s"] = budget_s
+        row["speed_mult"] = round(speed_mult, 2)
+        row["budget_s"] = budget_s
         (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
         # integrity: an agent that manipulated the device outside
