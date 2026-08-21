@@ -24,6 +24,11 @@ from agents.adapters import ADAPTERS
 from judge import judge as judge_answer, compute_ground_truth
 
 AGENT_BUFFER_S = 90          # process grace beyond the task's own timeout
+ESCAPE_PAT = re.compile(
+    r"simctl\s+(ui|launch|openurl|spawn|boot|shutdown|erase|addmedia|privacy|terminate)"
+    r"|sqlite3?[^\n]{0,80}(AddressBook|Calendar\.sqlitedb|Photos\.sqlite|Bookmarks\.db|CoreSimulator)"
+    r"|defaults\s+write", re.I)
+
 FAILURE_SIGNS = [            # transcript signatures -> tool-vs-model tags
     ("locked", "device-locked"), ("iPhone in Use", "mirroring-paused"),
     ("paste", "paste-sheet"), ("tap_text", "tap-miss"),
@@ -175,6 +180,10 @@ def main():
                                      args.model, spec["timeout_s"], str(agent_cwd))
         (run_dir / f"{task_id}-{args.agent}-agent.json").write_text(json.dumps(agent, indent=2))
 
+        # integrity: an agent that manipulated the device outside
+        # phone-harness is disqualified no matter what the checker says
+        escaped = bool(ESCAPE_PAT.search(json.dumps(agent.get("raw", {}))))
+
         # check — never trusts the agent
         if spec["check"] == "answer.judge":
             gt = spec.get("ground_truth") or ""
@@ -199,13 +208,18 @@ def main():
         cl, raw = ph(resolve_checker(spec["cleanup"], platform, spec.get("cleanup_args")), env)
         (run_dir / f"{task_id}-cleanup.log").write_text(raw)
 
-        row.update(status="pass" if passed else "fail",
+        if escaped:
+            passed = False
+        row.update(status="disqualified" if escaped else
+                   ("pass" if passed else "fail"),
+                   env_escape=escaped,
                    check=check_detail, cleanup_ok=bool(cl.get("ok")),
                    agent_wall_s=agent.get("agent_wall_s"),
                    turns=agent.get("turns"),
                    cost_usd=agent.get("cost_usd"),
                    usage=agent.get("usage", {}),
-                   failure_class=None if passed else classify(agent))
+                   failure_class="env-escape" if escaped else
+                                 (None if passed else classify(agent)))
         print(f"  {'PASS' if passed else 'FAIL'}  wall={row['agent_wall_s']}s "
               f"turns={row['turns']} cost=${row['cost_usd']}"
               + ("" if passed else f"  [{row['failure_class']}]"))

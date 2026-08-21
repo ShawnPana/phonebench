@@ -28,6 +28,9 @@ def _sealed_prompt(skill_text, prompt, env=None):
     note = f"{note}\n\n" if note else ""
     return (f"Tool guide for controlling the phone:\n\n{skill_text}\n\n---\n\n"
             f"{note}Task: {prompt}\n\n"
+            "Rules: interact with the phone ONLY through the phone-harness "
+            "command. Using simctl, adb, xcrun, sqlite, or any other means "
+            "to read or modify the phone or its data voids the task.\n\n"
             "Do the task on the phone now, then state the outcome in one "
             "or two sentences. Do not ask questions.")
 

@@ -44,7 +44,7 @@ def main():
     lines = ["| track | agent | model | pass | rate | $/task | s/task |",
              "|---|---|---|---|---|---|---|"]
     for (track, agent, model), rs in sorted(cells.items()):
-        scored = [r for r in rs if r["status"] in ("pass", "fail")]
+        scored = [r for r in rs if r["status"] in ("pass", "fail", "disqualified")]
         p = sum(1 for r in scored if r["status"] == "pass")
         costs = [r["cost_usd"] for r in scored if r.get("cost_usd")]
         walls = [r["agent_wall_s"] for r in scored if r.get("agent_wall_s")]
@@ -60,7 +60,7 @@ def main():
     for (track, agent, model), rs in sorted(cells.items()):
         by = collections.defaultdict(lambda: [0, 0])
         for r in rs:
-            if r["status"] in ("pass", "fail"):
+            if r["status"] in ("pass", "fail", "disqualified"):
                 st = strata.get(r["task"], "?")
                 by[st][1] += 1
                 by[st][0] += r["status"] == "pass"
