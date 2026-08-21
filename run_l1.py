@@ -100,6 +100,10 @@ def main():
     harness_sha = None
     if harness_dir.exists():
         os.environ["PATH"] = f"{harness_dir}:{os.environ['PATH']}"
+        # Agent CLIs may run LOGIN shells that rebuild PATH from dotfiles and
+        # bury our prepend; the ~/.local/bin shim (first in login PATH)
+        # delegates to this env var, which login shells DO inherit.
+        os.environ["PHONEBENCH_HARNESS"] = str(harness_dir)
         lock = HERE / "harness.lock"
         if lock.exists():
             harness_sha = json.loads(lock.read_text()).get("sha")
