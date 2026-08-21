@@ -212,10 +212,13 @@ for (rid,) in rows:
             break
         except sqlite3.OperationalError as e:
             msg = str(e)
-            if "no such function:" not in msg:
+            if not re.search(r"(no such|unknown) function", msg):
                 raise
-            fn = msg.split("no such function:")[1].strip()
-            db.create_function(fn, -1, lambda *a: None)
+            fn = re.split(r"(?:no such|unknown) function:?", msg)[1].strip().strip("()")
+            import uuid as _u
+            db.create_function(fn, -1,
+                (lambda *a: _u.uuid4().hex.upper()) if "guid" in fn.lower()
+                else (lambda *a: None))
 db.commit(); db.close()
 if rows:
     subprocess.run(["xcrun", "simctl", "terminate", _udid(),
@@ -254,12 +257,16 @@ def _stubbed(db):
     class W:
         def __init__(s2, db): s2.db = db
         def ex(s2, *a):
+            import uuid as _u
             for _ in range(24):
                 try: return s2.db.execute(*a)
                 except sqlite3.OperationalError as e:
                     m = str(e)
-                    if "no such function:" not in m: raise
-                    s2.db.create_function(m.split("no such function:")[1].strip(), -1, lambda *x: None)
+                    if not re.search(r"(no such|unknown) function", m): raise
+                    fn = re.split(r"(?:no such|unknown) function:?", m)[1].strip().strip("()")
+                    s2.db.create_function(fn, -1,
+                        (lambda *x: _u.uuid4().hex.upper()) if "guid" in fn.lower()
+                        else (lambda *x: None))
     return W(db)
 '''
 

@@ -39,8 +39,11 @@ def _fallback(answer, ground_truth):
     """No API key: normalized containment of the ground truth's quoted core."""
     def norm(s):
         return re.sub(r"[^a-z0-9]", "", (s or "").lower())
-    quoted = re.findall(r"'([^']+)'", ground_truth) or [ground_truth]
-    hit = any(norm(q) in norm(answer) for q in quoted)
+    cores = re.findall(r"'([^']+)'", ground_truth)
+    cores.append(re.sub(r"\([^)]*\)", "", ground_truth))   # drop parentheticals
+    cores.append(ground_truth)
+    # a core matches if it appears in the answer once both are normalized
+    hit = any(norm(c) and norm(c) in norm(answer) for c in cores)
     return {"verdict": hit, "reasoning": "substring fallback (no GEMINI_API_KEY)",
             "judge": "fallback-substring"}
 
