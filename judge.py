@@ -42,8 +42,15 @@ def _fallback(answer, ground_truth):
     cores = re.findall(r"'([^']+)'", ground_truth)
     cores.append(re.sub(r"\([^)]*\)", "", ground_truth))   # drop parentheticals
     cores.append(ground_truth)
-    # a core matches if it appears in the answer once both are normalized
-    hit = any(norm(c) and norm(c) in norm(answer) for c in cores)
+    na = norm(answer)
+    # contiguous match of a core, OR every token of a QUOTED core present —
+    # "iOS Version: 26.2" must satisfy the core 'iOS 26.2' despite the word
+    # in between (a real judge would pass it; the fallback must too)
+    def tokens(c):
+        return [t for t in re.findall(r"[a-z0-9]+", c.lower()) if t]
+    hit = any(norm(c) and norm(c) in na for c in cores) or \
+          any(ts and all(t in na for t in ts)
+              for ts in (tokens(c) for c in re.findall(r"'([^']+)'", ground_truth)))
     return {"verdict": hit, "reasoning": "substring fallback (no GEMINI_API_KEY)",
             "judge": "fallback-substring"}
 
